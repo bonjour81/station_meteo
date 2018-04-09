@@ -1,6 +1,8 @@
+#V1.0
+# History:
+
+
 #include <Arduino.h>
-
-
 #include <ESP8266WiFi.h>
 #include <ClosedCube_HDC1080.h>
 #include <Adafruit_SI1145.h>
