@@ -5,3 +5,4 @@
 .gcc-flags.json
 .travis.yml
 platformio.ini
+src/password.h
