@@ -1,1 +1,3 @@
-// to be filled following example
+// credentials for wifi & mqtt
+
+const char* ssid  = 
