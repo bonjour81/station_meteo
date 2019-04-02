@@ -1,4 +1,3 @@
-src/password.h
 .gitignore
 .pioenvs
 .piolibdeps
@@ -6,4 +5,5 @@ src/password.h
 .gcc-flags.json
 .travis.yml
 platformio.ini
-src/password.h
+src/passwords.h
+.*
