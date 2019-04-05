@@ -10,4 +10,4 @@ The datatransmission from sensors to [WeeWX](http://weewx.com/) is based on MQTT
 It's available in the [weewx section](./weewx).
 
 
-[See wiki for details](https://github.com/bonjour81/station_meteo/wiki)
+##[See wiki for a lot more details](https://github.com/bonjour81/station_meteo/wiki)
