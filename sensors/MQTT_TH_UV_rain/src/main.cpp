@@ -1,11 +1,31 @@
-//V1.1
+//V1.26
 //History:
-// added OTA
-// added AM2315
+// added OTA via http server
+// added debug mode for serial monitoring
 
+
+//#define DEBUGMODE   //If you comment this line, the DPRINT & DPRINTLN lines are defined as blank.
+#ifdef  DEBUGMODE    //Macros are usually in all capital letters.
+  #define DPRINT(...)    Serial.print(__VA_ARGS__)     //DPRINT is a macro, debug print
+  #define DPRINTLN(...)  Serial.println(__VA_ARGS__)   //DPRINTLN is a macro, debug print with new line
+#else
+  #define DPRINT(...)     //now defines a blank line
+  #define DPRINTLN(...)   //now defines a blank line
+#endif
+
+
+
+const int FW_VERSION = 126;
+const char* fwImageURL = "http://192.168.1.180/fota/THrain/firmware.bin"; // update with your link to the new firmware bin file.
+const char* fwVersionURL = "http://192.168.1.180/fota/THrain/firmware.version"; // update with your link to a text file with new version (just a single line with a number)
+// version is used to do OTA only one time, even if you let the firmware file available on the server.
+// flashing will occur only if a greater number is available in the "firmware.version" text file.
+// take care the number in text file is compared to "FW_VERSION" in the code => this const shall be incremented at each update.
 
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <ESP8266httpUpdate.h>
 #include <PCF8583.h>
 #include <Adafruit_INA219.h>
 //#include "VEML6075.h"
@@ -43,17 +63,17 @@ IPAddress subnet(255, 255, 255, 0);  // set subnet mask to match your network
 WiFiClient client;
 // Setup the MQTT client class by passing in the WiFi client and MQTT server and login details.
 Adafruit_MQTT_Client mqtt(&client, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME, AIO_KEY);
-Adafruit_MQTT_Publish rain_pub = Adafruit_MQTT_Publish(&mqtt, "tweewx/rain", 0);  // QoS 0 because QoS 1 may send several time rain (could be counted several times by weewx
-Adafruit_MQTT_Publish outTemp_pub = Adafruit_MQTT_Publish(&mqtt, "tweewx/outTemp", 1);
+Adafruit_MQTT_Publish rain_pub        = Adafruit_MQTT_Publish(&mqtt, "weewx/rain", 0);  // QoS 0 because QoS 1 may send several time rain (could be counted several times by weewx
+Adafruit_MQTT_Publish outTemp_pub     = Adafruit_MQTT_Publish(&mqtt, "weewx/outTemp", 1);
 Adafruit_MQTT_Publish outHumidity_pub = Adafruit_MQTT_Publish(&mqtt, "tweewx/outHumidity", 1);
-Adafruit_MQTT_Publish UV_pub = Adafruit_MQTT_Publish(&mqtt, "tweewx/UV", 1);
-Adafruit_MQTT_Publish Vsolar_pub = Adafruit_MQTT_Publish(&mqtt, "weewx/Vsolar", 1);
-Adafruit_MQTT_Publish Isolar_pub = Adafruit_MQTT_Publish(&mqtt, "weewx/Isolar", 1);
-Adafruit_MQTT_Publish Vbat_pub = Adafruit_MQTT_Publish(&mqtt, "weewx/Vbat", 1);
-Adafruit_MQTT_Publish Status = Adafruit_MQTT_Publish(&mqtt, "THrain/Status", 1);
+Adafruit_MQTT_Publish UV_pub          = Adafruit_MQTT_Publish(&mqtt, "tweewx/UV", 1);
+Adafruit_MQTT_Publish Vsolar_pub      = Adafruit_MQTT_Publish(&mqtt, "weewx/Vsolar", 1);
+Adafruit_MQTT_Publish Isolar_pub      = Adafruit_MQTT_Publish(&mqtt, "weewx/Isolar", 1);
+Adafruit_MQTT_Publish Vbat_pub        = Adafruit_MQTT_Publish(&mqtt, "weewx/Vbat", 1);
 
-Adafruit_MQTT_Subscribe OTA_flag = Adafruit_MQTT_Subscribe(&mqtt, "THrain/OTA");// flag to enable OTA (wait for OTA before go to sleep), use retained messages on publisher!
-Adafruit_MQTT_Subscribe user_sleep_time = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/THrain/Sleep_time");// set different time to wait before next wakeup (nice to speed up, for debug), use retained messages on publisher!
+Adafruit_MQTT_Publish Status_pub      = Adafruit_MQTT_Publish(&mqtt, "THrain/Status", 1);
+Adafruit_MQTT_Publish Version_pub     = Adafruit_MQTT_Publish(&mqtt, "THrain/Version", 1);
+Adafruit_MQTT_Publish Debug_pub       = Adafruit_MQTT_Publish(&mqtt, "THrain/Debug", 1);
 
 
 // variables ////////////////////////////////////////////////////////////////////////
@@ -66,8 +86,13 @@ float UVB = -1;
 float solar_voltage = -1;
 float solar_current = -1;  // to check if battery is charging well.
 float battery_voltage = -1;
-int sleep_duration = 30;  // deep sleep duration in seconds
 
+// set faster emission in debug mode (take care battery will empty faster!)
+#ifdef DEBUGMODE
+  int sleep_duration = 1;  // deep sleep duration in seconds
+#else
+  int sleep_duration = 150;  // deep sleep duration in seconds
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // setup_wifi() : connexion to wifi hotspot
@@ -90,6 +115,9 @@ void setup_wifi() {
    }
 // if connexion is successful, let's go to next, no need for SSID2
    if (WiFi.status() == WL_CONNECTED) {
+      DPRINTLN(" ");
+
+      DPRINTLN("connected");
       return;
    }
 // let's try SSID2 (if ssid1 did not worked)
@@ -118,10 +146,7 @@ void setup_mqtt() {
    if (mqtt.connected()) {
       return;
    }
-   mqtt.subscribe(&OTA_flag);
-   mqtt.subscribe(&user_sleep_time);
 
-   //Serial.print("Connecting to MQTT... ");
    uint8_t retries = 3;
    while ((ret = mqtt.connect()) != 0) { // connect will return 0 for connected
       //Serial.println(mqtt.connectErrorString(ret));
@@ -133,15 +158,54 @@ void setup_mqtt() {
          ESP.deepSleep(sleep_duration * 1000000);  // if no connexion, deepsleep for 20sec, after will restart (= reset)
       }
    }
-   Status.publish("Go!");
+   Status_pub.publish("Online!");
+   delay(5);
+   Version_pub.publish(FW_VERSION);
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//  check_OTA() : check for some available new firmware on server?
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void check_OTA() {
+// setup_wifi(); must be called before check_OTA();
+
+DPRINT("Firmware:<");DPRINT(FW_VERSION);DPRINTLN(">");
+DPRINTLN("Check for OTA");
+
+HTTPClient http;
+if (http.begin(client, fwVersionURL)) {
+//if (http.begin(client, "http://192.168.1.180/fota/THrain/firmware.version")) {
+    DPRINTLN("http begin");
+    int httpCode = http.GET();
+    DPRINT("httpCode:");DPRINTLN(httpCode);
+    if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
+          String newFWVersion = http.getString();
+          DPRINT("newFWVersion: ");DPRINTLN(newFWVersion);
+          int newVersion = newFWVersion.toInt();
+          if( newVersion > FW_VERSION ) {
+            DPRINTLN("start OTA !");
+            delay(100);
+            // place OTA command
+            ESPhttpUpdate.update( fwImageURL );
+          } else {
+            DPRINTLN("no new version available");
+          }
+    }
+  } // end if http.begin
+} // end check_OTA()
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //  Start of main programm !
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void setup() {
+   #ifdef DEBUGMODE
    Serial.begin(115200);
+   #endif
+
+
+
    //Serial.println(' ');
    // check if POR occured ( @POR, register 0x00 of PCF8583 is set to 0 )
    if ( rtc.getRegister(0) == 0 ) {
@@ -152,6 +216,7 @@ void setup() {
       rtc.setMode(MODE_EVENT_COUNTER);  // will set non zero value in register 0x00, so if no POR occured at next loop, register will not be cleared
       rtc.setCount(0);  // reset rain counter
    }
+
    // read sensors
    ina219_solar.begin();
    ina219_battery.begin();
@@ -164,17 +229,23 @@ void setup() {
      temp = am2315.readTemperature();
      humi = am2315.readHumidity();
    }
+   DPRINT("temp:"); DPRINTLN(temp);
+   DPRINT("humi:"); DPRINTLN(humi);
    rain = 0.2 * float(rtc.getCount());
-   solar_voltage = ina219_solar.getBusVoltage_V();
-   solar_current = ina219_solar.getCurrent_mA();
-   battery_voltage = ina219_battery.getBusVoltage_V();
+   DPRINT("rain :"); DPRINTLN(rain);
+   solar_voltage = ina219_solar.getBusVoltage_V();    DPRINT("solar_voltage:"); DPRINTLN(solar_voltage);
+   solar_current = ina219_solar.getCurrent_mA();      DPRINT("solar_current:"); DPRINTLN(solar_current);
+   battery_voltage = ina219_battery.getBusVoltage_V();DPRINT("battery_voltage:"); DPRINTLN(battery_voltage);
 
    if (uv.begin()) {  // power ON veml6075 early to let it wakeup
      uv.powerOn();
    }
 
-// measurements done, time to send them all !
-   if (rain > 0 && rain <500 ) {
+  setup_wifi();
+  check_OTA();  // check for new firmware available on server, if check OTA with occur
+  // OTA must be checked before connecting to MQTT (or after disconnecting MQTT)
+  // measurements done, time to send them all !
+  if (rain > 0 && rain <500 ) {
       setup_wifi();
       setup_mqtt();
       if (rain_pub.publish(rain)) {
@@ -223,32 +294,20 @@ void setup() {
        UV_pub.publish(UVindex);
    }
   // add subscription handling (OTA and user_sleep_time)
-  Status.publish("Sensors published!");
 
+    DPRINTLN("End of measurements & MQTT publish");
 
-
-  Adafruit_MQTT_Subscribe *subscription;
-  while ((subscription = mqtt.readSubscription(5000))) {
-       Status.publish("check sub");
-    if (subscription == &OTA_flag) {
-       Status.publish("OTA flag detected");
-      if (strcmp((char *)OTA_flag.lastread, "ON") == 0) {
-       Status.publish("OTA flag ON");
-      }
-    }
-  }
 
   // if (subscription == &user_sleep_time) {
   //     sleep_duration = atoi((char *)user_sleep_time.lastread); // may be used for debug to shorten sleep.
   // }
 
 //////////////////////////////////// OTA management
-  setup_wifi();
-  Status.publish("OK");
+  /*setup_wifi();
   ArduinoOTA.setPort(8266);
   ArduinoOTA.setHostname("ESP_THrain"); // on donne une petit nom a notre module
   ArduinoOTA.onStart([]() {
-     Status.publish("Start updating");// + type);
+     Debug_pub.publish("Start updating");// + type);
      String type;
      if (ArduinoOTA.getCommand() == U_FLASH)
        type = "sketch";
@@ -257,38 +316,39 @@ void setup() {
          // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
   });
   ArduinoOTA.onEnd([]() {
-     Status.publish("End");// + type);
+     Debug_pub.publish("End");// + type);
      //Serial.println("\nEnd");
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-     Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+    // Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
   });
   ArduinoOTA.onError([](ota_error_t error) {
     Serial.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) Status.publish("Auth Failed");
-    else if (error == OTA_BEGIN_ERROR) Status.publish("Begin Failed");
-    else if (error == OTA_CONNECT_ERROR) Status.publish("Connect Failed");
-    else if (error == OTA_RECEIVE_ERROR) Status.publish("Receive Failed");
-    else if (error == OTA_END_ERROR) Status.publish("End Failed");
-  });
+    if (error == OTA_AUTH_ERROR) Debug_pub.publish("Auth Failed");
+    else if (error == OTA_BEGIN_ERROR) Debug_pub.publish("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) Debug_pub.publish("Connect Failed");
+    else if (error == OTA_RECEIVE_ERROR) Debug_pub.publish("Receive Failed");
+    else if (error == OTA_END_ERROR) Debug_pub.publish("End Failed");
+  });*/
+
+  Status_pub.publish("Offline!");
+  delay(15);
   mqtt.disconnect();
-  ArduinoOTA.begin(); // initialisation de l'OTA
-  uint8_t timeout_OTA = 30;
+/*  ArduinoOTA.begin(); // initialisation de l'OTA
+  uint8_t timeout_OTA = 100;
   while (timeout_OTA > 0) {
      ArduinoOTA.handle();
-     delay(100);
+     delay(50);
      timeout_OTA--;
   }
-
+*/
 //////////////////////////////////// end of OTA management
-
 // job is done, let's disconnect
-
-
-   delay(50);
+   delay(15);
    WiFi.disconnect();
    //Serial.println("Sleep");
-   delay(50);
+   DPRINTLN("Go to sleep");
+   delay(15);
    ESP.deepSleep(sleep_duration * 1000000);
 }
 
