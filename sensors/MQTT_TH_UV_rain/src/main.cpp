@@ -28,13 +28,12 @@ const char* fwVersionURL = "http://192.168.1.180/fota/THrain/firmware.version"; 
 #include <ESP8266httpUpdate.h>
 #include <PCF8583.h>
 #include <Adafruit_INA219.h>
-//#include "VEML6075.h"
 #include <SparkFun_VEML6075_Arduino_Library.h>
 #include <ClosedCube_HDC1080.h>
 #include <Adafruit_AM2315.h>
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
-#include <ArduinoOTA.h>
+
 
 // wifi & mqtt credentials
 #include "passwords.h"
@@ -295,55 +294,11 @@ void setup() {
    }
   // add subscription handling (OTA and user_sleep_time)
 
-    DPRINTLN("End of measurements & MQTT publish");
-
-
-  // if (subscription == &user_sleep_time) {
-  //     sleep_duration = atoi((char *)user_sleep_time.lastread); // may be used for debug to shorten sleep.
-  // }
-
-//////////////////////////////////// OTA management
-  /*setup_wifi();
-  ArduinoOTA.setPort(8266);
-  ArduinoOTA.setHostname("ESP_THrain"); // on donne une petit nom a notre module
-  ArduinoOTA.onStart([]() {
-     Debug_pub.publish("Start updating");// + type);
-     String type;
-     if (ArduinoOTA.getCommand() == U_FLASH)
-       type = "sketch";
-     else // U_SPIFFS
-       type = "filesystem";
-         // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-  });
-  ArduinoOTA.onEnd([]() {
-     Debug_pub.publish("End");// + type);
-     //Serial.println("\nEnd");
-  });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    // Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-  });
-  ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) Debug_pub.publish("Auth Failed");
-    else if (error == OTA_BEGIN_ERROR) Debug_pub.publish("Begin Failed");
-    else if (error == OTA_CONNECT_ERROR) Debug_pub.publish("Connect Failed");
-    else if (error == OTA_RECEIVE_ERROR) Debug_pub.publish("Receive Failed");
-    else if (error == OTA_END_ERROR) Debug_pub.publish("End Failed");
-  });*/
-
-  Status_pub.publish("Offline!");
-  delay(15);
-  mqtt.disconnect();
-/*  ArduinoOTA.begin(); // initialisation de l'OTA
-  uint8_t timeout_OTA = 100;
-  while (timeout_OTA > 0) {
-     ArduinoOTA.handle();
-     delay(50);
-     timeout_OTA--;
-  }
-*/
-//////////////////////////////////// end of OTA management
-// job is done, let's disconnect
+  // job is done, let's disconnect
+   DPRINTLN("End of measurements & MQTT publish");
+   Status_pub.publish("Offline!");
+   delay(15);
+   mqtt.disconnect();
    delay(15);
    WiFi.disconnect();
    //Serial.println("Sleep");
