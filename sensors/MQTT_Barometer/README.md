@@ -19,8 +19,8 @@ line 107: the altitude of your sensor in meter.
 line 119: the IP address of your mosquitto broker
 
 
-May work too on raspberry pi (not tested).
+May work on raspberry pi too (not tested).
 
-See wiki for more technical detail about sensor characteristics and connexion.
+[See wiki for more technical detail](https://github.com/bonjour81/station_meteo/wiki/MS5611-Barometer-by-MQTT-on-OrangePi) about sensor characteristics and how to use it.
 
 
