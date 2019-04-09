@@ -61,7 +61,7 @@ IPAddress subnet(255, 255, 255, 0);  // set subnet mask to match your network
 // Create an ESP8266 WiFiClient class to connect to the MQTT server.
 WiFiClient client;
 // Setup the MQTT client class by passing in the WiFi client and MQTT server and login details.
-Adafruit_MQTT_Client mqtt(&client, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME, AIO_KEY);
+Adafruit_MQTT_Client mqtt(&client, AIO_SERVER, AIO_SERVERPORT, "ESP_THrain", AIO_USERNAME, AIO_KEY);
 Adafruit_MQTT_Publish rain_pub        = Adafruit_MQTT_Publish(&mqtt, "weewx/rain", 0);  // QoS 0 because QoS 1 may send several time rain (could be counted several times by weewx
 Adafruit_MQTT_Publish outTemp_pub     = Adafruit_MQTT_Publish(&mqtt, "weewx/outTemp", 1);
 Adafruit_MQTT_Publish outHumidity_pub = Adafruit_MQTT_Publish(&mqtt, "tweewx/outHumidity", 1);
