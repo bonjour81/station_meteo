@@ -1,3 +1,6 @@
+//V1.28
+//History:
+// added average (on 2 samples) of UV, T & H measurement.
 //V1.27
 //History:
 // switched to AM2315 for temp & humidity sensor
@@ -18,7 +21,7 @@
 
 
 
-const int FW_VERSION = 127;
+const int FW_VERSION = 128;
 const char* fwImageURL = "http://192.168.1.180/fota/THrain/firmware.bin"; // update with your link to the new firmware bin file.
 const char* fwVersionURL = "http://192.168.1.180/fota/THrain/firmware.version"; // update with your link to a text file with new version (just a single line with a number)
 // version is used to do OTA only one time, even if you let the firmware file available on the server.
@@ -83,6 +86,8 @@ Adafruit_MQTT_Publish Debug_pub       = Adafruit_MQTT_Publish(&mqtt, "THrain/Deb
 float rain = -1;
 float temp = -100;
 float humi = -1;
+float temp_buffer = -100;
+float humi_buffer = -1;
 float UVindex = -1;
 float UVA = -1;
 float UVB = -1;
@@ -224,8 +229,14 @@ void setup() {
      humi = hdc1080.readHumidity();
    };*/
    if (am2315.begin()) {
-     temp = am2315.readTemperature();
-     humi = am2315.readHumidity();
+
+     if (am2315.readTemperatureAndHumidity(temp_buffer,humi_buffer)) {
+       temp = temp_buffer;  // if function return false, make sure the value are considered wrong and not emitted
+       humi = humi_buffer;
+     } else {
+       temp = -100;  // if function return false, make sure the value are considered wrong and not emitted
+       humi = -1;
+     }
      DPRINTLN("am2315 detected");
      DPRINT("T:");DPRINTLN(temp);
      DPRINT("H:");DPRINTLN(humi);
@@ -244,6 +255,15 @@ void setup() {
   check_OTA();  // check for new firmware available on server, if check OTA with occur
   // OTA must be checked before connecting to MQTT (or after disconnecting MQTT)
   // measurements done, time to send them all !
+
+
+  // I wise to average T & H on a few samples, but am2315 does not allow fast reading (min 2sec recommanded according to adafruit)
+  // I use the wifi connexion as a delay (a few seconds)
+  if (am2315.readTemperatureAndHumidity(temp_buffer,humi_buffer)) {
+    temp = (temp + temp_buffer) / 2;  // if function return false, make sure the value are considered wrong and not emitted
+    humi = (humi + humi_buffer) / 2;
+  } // no else here, if we were lucky at 1st measurement, we have a least a value, if not, let's forget T or H this time.
+
   if (rain > 0 && rain <500 ) {
       setup_wifi();
       setup_mqtt();
@@ -285,6 +305,10 @@ void setup() {
    // measure UV index and publish
    if (uv.begin()) {
      UVindex = uv.index();
+     delay(2);
+     UVindex = UVindex + uv.index();
+     UVindex = UVindex + uv.index();
+     UVindex = UVindex / 3;
      uv.shutdown();
    }
    if ((UVindex > 0) && (UVindex < 25)) {
@@ -292,8 +316,6 @@ void setup() {
        setup_mqtt();
        UV_pub.publish(UVindex);
    }
-   Debug_pub.publish(temp);
-  // add subscription handling (OTA and user_sleep_time)
 
   // job is done, let's disconnect
    DPRINTLN("End of measurements & MQTT publish");
