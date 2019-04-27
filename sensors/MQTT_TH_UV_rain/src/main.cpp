@@ -1,5 +1,7 @@
-//V1.28
+//V1.29
 //History:
+// change Isolar unit in Amp instead of milliamp to match weewx default unit for current.
+//v1.28
 // added average (on 2 samples) of UV, T & H measurement.
 //V1.27
 //History:
@@ -21,7 +23,7 @@
 
 
 
-const int FW_VERSION = 128;
+const int FW_VERSION = 129;
 const char* fwImageURL = "http://192.168.1.180/fota/THrain/firmware.bin"; // update with your link to the new firmware bin file.
 const char* fwVersionURL = "http://192.168.1.180/fota/THrain/firmware.version"; // update with your link to a text file with new version (just a single line with a number)
 // version is used to do OTA only one time, even if you let the firmware file available on the server.
@@ -75,6 +77,7 @@ Adafruit_MQTT_Publish outHumidity_pub = Adafruit_MQTT_Publish(&mqtt, "weewx/outH
 Adafruit_MQTT_Publish UV_pub          = Adafruit_MQTT_Publish(&mqtt, "weewx/UV", 1);
 Adafruit_MQTT_Publish Vsolar_pub      = Adafruit_MQTT_Publish(&mqtt, "weewx/Vsolar", 1);
 Adafruit_MQTT_Publish Isolar_pub      = Adafruit_MQTT_Publish(&mqtt, "weewx/Isolar", 1);
+Adafruit_MQTT_Publish IsolarA_pub      = Adafruit_MQTT_Publish(&mqtt, "tweewx/Isolar", 1);
 Adafruit_MQTT_Publish Vbat_pub        = Adafruit_MQTT_Publish(&mqtt, "weewx/Vbat", 1);
 
 Adafruit_MQTT_Publish Status_pub      = Adafruit_MQTT_Publish(&mqtt, "THrain/Status", 1);
@@ -244,7 +247,8 @@ void setup() {
    rain = 0.2 * float(rtc.getCount());
    DPRINT("rain :"); DPRINTLN(rain);
    solar_voltage = ina219_solar.getBusVoltage_V();    DPRINT("solar_voltage:"); DPRINTLN(solar_voltage);
-   solar_current = ina219_solar.getCurrent_mA();      DPRINT("solar_current:"); DPRINTLN(solar_current);
+   solar_current = (ina219_solar.getCurrent_mA());      DPRINT("solar_current:"); DPRINTLN(solar_current);
+   solar_current = 0.001 * solar_current;
    battery_voltage = ina219_battery.getBusVoltage_V();DPRINT("battery_voltage:"); DPRINTLN(battery_voltage);
 
    if (uv.begin()) {  // power ON veml6075 early to let it wakeup
@@ -293,7 +297,7 @@ void setup() {
    if ((solar_current >= 0) && (solar_current < 1000.0)) {
       setup_wifi();
       setup_mqtt();
-      Isolar_pub.publish(solar_current);
+      Isolar_pub.publish(solar_current,4);
       delay(15);
    }
    if ((battery_voltage >= 0) && (battery_voltage < 20.0) ) {
