@@ -1,8 +1,16 @@
 // MQTT wind sensor for weewx
-const int FW_VERSION = 1;
+const int FW_VERSION = 6;
+const char* fwImageURL = "http://192.168.1.180/fota/Wind/firmware.bin"; // update with your link to the new firmware bin file.
+const char* fwVersionURL = "http://192.168.1.180/fota/Wind/firmware.version"; // update with your link to a text file with new version (just a single line with a number)
+// version is used to do OTA only one time, even if you let the firmware file available on the server.
+// flashing will occur only if a greater number is available in the "firmware.version" text file.
+// take care the number in text file is compared to "FW_VERSION" in the code => this const shall be incremented at each update.
+
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <HTTPClient.h>
+#include <HTTPUpdate.h>
 #include <DS3232RTC.h>  // https://github.com/JChristensen/DS3232RTC
 #include "PCF8583.h"    //https://bitbucket.org/xoseperez/pcf8583.git
 #include <Adafruit_ADS1015.h> // library for ADS1115 too
@@ -20,13 +28,13 @@ const int FW_VERSION = 1;
 // general timings
 #define RATIO_KMH_TO_HZ 4
 #define TSAMPLE 10  // Define the sample rate:  the ESP will wake every "TSAMPLE" second  to measure speed & direction, ex every 15sec
-                    // TSAMPLE must be a subdivision of 60sec, ex 10,12,15, but  not 8, 11, 13...
-#define RATIO   6  // define how many TSAMPLE period are needed to perform average, example 8
+                   // TSAMPLE must be a subdivision of 60sec, ex 10,12,15, but  not 8, 11, 13...
+#define RATIO   12  // define how many TSAMPLE period are needed to perform average, example 8
 const uint16_t Taverage = TSAMPLE * RATIO;  // Define the average rate:  the ESP will process average value "Taverage" second , example 8x15 = 120sec = 2min
-#define STILL_ALIVE  5  // will emit every STILL_ALIVE even if no wind
+#define STILL_ALIVE  20  // will emit every STILL_ALIVE even if no wind, must be a multiple of Taverage
 
 // macro for debug
-#define DEBUGMODE   //If you comment this line, the DPRINT & DPRINTLN lines are defined as blank.
+//#define DEBUGMODE   //If you comment this line, the DPRINT & DPRINTLN lines are defined as blank.
 #ifdef  DEBUGMODE    //Macros are usually in all capital letters.
   #define DPRINT(...)    Serial.print(__VA_ARGS__)     //DPRINT is a macro, debug print
   #define DPRINTLN(...)  Serial.println(__VA_ARGS__)   //DPRINTLN is a macro, debug print with new line
@@ -50,12 +58,12 @@ Adafruit_MQTT_Publish windSpeed_pub   = Adafruit_MQTT_Publish(&mqtt, "tweewx/win
 Adafruit_MQTT_Publish windDir_pub     = Adafruit_MQTT_Publish(&mqtt, "tweewx/windDir",     1);
 Adafruit_MQTT_Publish windGust_pub    = Adafruit_MQTT_Publish(&mqtt, "tweewx/windGust",    1);
 Adafruit_MQTT_Publish windGustDir_pub = Adafruit_MQTT_Publish(&mqtt, "tweewx/windGustDir", 1);
-Adafruit_MQTT_Publish Status_pub      = Adafruit_MQTT_Publish(&mqtt, "THwind/Status", 1);
-Adafruit_MQTT_Publish Version_pub     = Adafruit_MQTT_Publish(&mqtt, "THwind/Version", 1);
-Adafruit_MQTT_Publish Debug_pub       = Adafruit_MQTT_Publish(&mqtt, "THwind/Debug", 1);
-Adafruit_MQTT_Publish Vsolar_pub      = Adafruit_MQTT_Publish(&mqtt, "tweewx/WVsolar", 1);
-Adafruit_MQTT_Publish Isolar_pub      = Adafruit_MQTT_Publish(&mqtt, "tweewx/WIsolar", 1);
-Adafruit_MQTT_Publish Vbat_pub        = Adafruit_MQTT_Publish(&mqtt, "tweewx/WVbat", 1);
+Adafruit_MQTT_Publish Status_pub      = Adafruit_MQTT_Publish(&mqtt, "wind/Status", 1);
+Adafruit_MQTT_Publish Version_pub     = Adafruit_MQTT_Publish(&mqtt, "wind/Version", 1);
+Adafruit_MQTT_Publish Debug_pub       = Adafruit_MQTT_Publish(&mqtt, "wind/Debug", 1);
+Adafruit_MQTT_Publish Vsolar_pub      = Adafruit_MQTT_Publish(&mqtt, "weewx/WVsolar", 1);
+Adafruit_MQTT_Publish Isolar_pub      = Adafruit_MQTT_Publish(&mqtt, "weewx/WIsolar", 1);
+Adafruit_MQTT_Publish Vbat_pub        = Adafruit_MQTT_Publish(&mqtt, "weewx/WVbat", 1);
 
 
 /**********************  I2C  Components  *************************************/
@@ -103,8 +111,7 @@ float battery_voltage = -1;
 bool setup_wifi(const char* ssid, const char* password);
 void setup_mqtt();
 void report_wake_source();
-
-
+void check_OTA();
 
 /******************************************************************************/
 /*                      BEGINNING OF PROGRAMM                                 */
@@ -126,13 +133,12 @@ void setup() {
 	digitalWrite(led,HIGH);
 	ina219_solar.begin();
 	ina219_battery.begin();
-  ads.setGain(GAIN_ONE);        // 1x gain   +/- 4.096V  1 bit = 2mV      0.125mV
+	ads.setGain(GAIN_ONE);  // 1x gain   +/- 4.096V  1 bit = 2mV      0.125mV
 	digitalWrite(led,LOW); // short blink at startup
 	// first, let's check if everything is All_is_fine
 	// a/ check if the wakeup source is the DS3232M, in case the wake is due to ESP internal timer, something is wrong with RTC, let's try to reinit
 	// b/ check if oscStopped flag from DS3232M is ok, if not, we cannot rely on its timing, let's try to reinit too
 	// c/ check if the PCF8583 event counter has seen a Power ON reset);
-	DPRINTLN("init of I2C devices done");
 	if ((esp_sleep_get_wakeup_cause() !=  ESP_SLEEP_WAKEUP_EXT0)) {  // check if the ESP was wakeup by it's backup timer, normal wake is due to DS3232M
     #ifdef DEBUGMODE
 		report_wake_source();
@@ -150,20 +156,29 @@ void setup() {
 
 		// every 15sec task ////////////////////////////////////////  15sec task ///
 		// enable wind dir sensor
-		digitalWrite(enable_dir_sensor, HIGH);
-		delay(10); // turn on delay of the sensor,value to be checked
-		Vref = ads.readADC_Differential_0_1();
-		Vdir = ads.readADC_Differential_2_3();
-		//digitalWrite(enable_dir_sensor, LOW);
-		DPRINT("Vref:"); DPRINT(Vref); DPRINT(" Vdir:"); DPRINTLN(Vdir);
-		if (Vdir<=Vref && Vref>19000 && Vref<21000 && Vdir>=0) { // calculate wind direction
-			if (Vdir > (Vref-256)) {
-				windGustDir = 360;  // just in case the calibration is wrong and Vdir gets higher than corrected reference.
-			} else {
-				windGustDir =  int(360 *  (float(Vdir) / float(Vref-256)));//apparently, the sensor output cannot reach supply voltage,  remove 256 seems make possible that the output reach supply = 360°
+		if ((pulsecount-prev_pulsecount) > 0) {   // perform direction measurement if there are some wind only (to save some battery)
+			digitalWrite(enable_dir_sensor, HIGH);
+			delay(10); // turn on delay of the sensor,value to be checked
+			Vref = ads.readADC_Differential_0_1();
+			Vdir = ads.readADC_Differential_2_3();
+			digitalWrite(enable_dir_sensor, LOW);
+			DPRINT("Vref:"); DPRINT(Vref); DPRINT(" Vdir:"); DPRINTLN(Vdir);
+			if (Vdir<=Vref && Vref>19000 && Vref<21000 && Vdir>=0) { // calculate wind direction
+				if (Vdir > (Vref-256)) {
+					windGustDir = 360; // just in case the calibration is wrong and Vdir gets higher than corrected reference.
+				} else {
+					windGustDir =  int(360 *  (float(Vdir) / float(Vref-256)));//apparently, the sensor output cannot reach supply voltage,  remove 256 seems make possible that the output reach supply = 360°
 
+				}
+			}
+		} else { // If no wind, keep same dir as previous
+			if (Tindex == 0) {
+				windGustDir = Table_windDir[RATIO - 1];
+			} else {
+				windGustDir = Table_windDir[Tindex - 1];
 			}
 		}
+
 		// Store measured wind / winddir
 		Table_pulsecount[Tindex] = pulsecount-prev_pulsecount;
 		Table_windDir[Tindex] = windGustDir;
@@ -210,7 +225,8 @@ void setup() {
 
 		if (ready == 0) {  // does not allow emit a while after power on (until we have enough sample for average measurements)
 			if ((Tindex == 0) && (windSpeed>1) && (windSpeed<400) && (windDir>=0) && (windDir<=360)) { // let's emit every 2min, if valid data & if speed > 1km/h  (let's save battery if below 1km/h)
-				setup_wifi(wifi_ssid, wifi_password);
+        DPRINTLN("Let's emit average wind ************************************************");
+        setup_wifi(wifi_ssid, wifi_password);
 				setup_wifi(wifi_ssid2, wifi_password);
 				setup_mqtt();
 				windSpeed_pub.publish(windSpeed);
@@ -218,7 +234,8 @@ void setup() {
 				windDir_pub.publish(windDir);
 			}
 			if ((windGust > (windSpeed + 5)) && (windGust<400) && (windGustDir>=0) && (windGustDir<=360) && (windSpeed>1)) { // little filter here too,emit gust only if high enought
-				setup_wifi(wifi_ssid, wifi_password);
+        DPRINTLN("Let's emit Gust *********************************************************");
+        setup_wifi(wifi_ssid, wifi_password);
 				setup_wifi(wifi_ssid2, wifi_password);
 				setup_mqtt();
 				if (Tindex == 0) {
@@ -229,8 +246,10 @@ void setup() {
 				windGustDir_pub.publish(windGustDir);
 			}
 			if ((Tindex == 0) && ((minute() % STILL_ALIVE) == 0)) { // let's emit a few times even if there is no wind (so we know the sensor is alive), we can use it to send also battery & solar situation
+        DPRINTLN("Let's emit STILL_ALIVE min message");
 				solar_voltage = ina219_solar.getBusVoltage_V();     DPRINT("solar_voltage:");   DPRINTLN(solar_voltage);
 				solar_current = ina219_solar.getCurrent_mA();       DPRINT("solar_current:");   DPRINTLN(solar_current);
+        solar_current = 0.001 * solar_current; // convert to Amps instead of mA
 				battery_voltage = ina219_battery.getBusVoltage_V(); DPRINT("battery_voltage:"); DPRINTLN(battery_voltage);
 				if ((solar_voltage >= 0) && (solar_voltage < 20.0)) {
 					setup_wifi(wifi_ssid, wifi_password);
@@ -243,7 +262,7 @@ void setup() {
 					setup_wifi(wifi_ssid, wifi_password);
 					setup_wifi(wifi_ssid2, wifi_password);
 					setup_mqtt();
-					Isolar_pub.publish(solar_current);
+					Isolar_pub.publish(solar_current,4);
 					delay(5);
 				}
 				if ((battery_voltage >= 0) && (battery_voltage < 20.0) ) {
@@ -258,6 +277,11 @@ void setup() {
 					delay(5);
 					windDir_pub.publish(windDir);
 				}
+				if (mqtt.connected()) {
+					mqtt.disconnect();
+					check_OTA();
+				}
+
 			}
 
 			if (mqtt.connected()) {
@@ -276,6 +300,7 @@ void setup() {
 		DPRINTLN("*************************************************************");
 		DPRINT(  " Errors or power on occured, code:"); DPRINTLN(All_is_fine);
 		DPRINTLN("RE-INIT on going !");
+    digitalWrite(led,HIGH);
 		setTime(00, 00, 00, 13, 4, 2019);         // set time to 0 on DS3232M, we don't care about day or hours, only minutes & seconds
 		RTC.set(now());
 		counter.setMode(MODE_EVENT_COUNTER);         // will set non zero value in register 0x00, so if no POR occured at next loop, register will not be cleared
@@ -300,7 +325,22 @@ void setup() {
 		nextwake = TSAMPLE;
 		All_is_fine = 0;
 		DPRINTLN("RE-INIT done !");
+		setup_wifi(wifi_ssid, wifi_password);
+		setup_wifi(wifi_ssid2, wifi_password);
+		check_OTA();
 		DPRINTLN("*************************************************************");
+    setup_mqtt();
+    Status_pub.publish("Re-init!");
+    //delay(800);
+    digitalWrite(led,LOW);
+    delay(100);
+    digitalWrite(led,HIGH);
+    delay(100);
+    digitalWrite(led,LOW);
+    delay(100);
+    digitalWrite(led,HIGH);
+    delay(100);
+    digitalWrite(led,LOW);
 
 	}         // end if All_is_fine > 0
 
@@ -413,3 +453,35 @@ void report_wake_source() {
 		//default : Serial.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); break;
 	}
 }
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//  check_OTA() : check for some available new firmware on server?
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void check_OTA() {
+// setup_wifi(); must be called before check_OTA();
+
+	DPRINT("Firmware:<"); DPRINT(FW_VERSION); DPRINTLN(">");
+	DPRINTLN("Check for OTA");
+
+	HTTPClient http;
+	if (http.begin(client, fwVersionURL)) {
+//if (http.begin(client, "http://192.168.1.180/fota/THrain/firmware.version")) {
+		DPRINTLN("http begin");
+		int httpCode = http.GET();
+		DPRINT("httpCode:"); DPRINTLN(httpCode);
+		if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
+			String newFWVersion = http.getString();
+			DPRINT("newFWVersion: "); DPRINTLN(newFWVersion);
+			int newVersion = newFWVersion.toInt();
+			if( newVersion > FW_VERSION ) {
+				DPRINTLN("start OTA !");
+				delay(100);
+				// place OTA command
+				httpUpdate.update(client, fwImageURL);
+			} else {
+				DPRINTLN("no new version available");
+			}
+		}
+	} // end if http.begin
+} // end check_OTA()
