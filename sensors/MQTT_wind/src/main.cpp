@@ -1,5 +1,5 @@
 // MQTT wind sensor for weewx
-const int FW_VERSION = 6;
+const int FW_VERSION = 11;
 const char* fwImageURL = "http://192.168.1.180/fota/Wind/firmware.bin"; // update with your link to the new firmware bin file.
 const char* fwVersionURL = "http://192.168.1.180/fota/Wind/firmware.version"; // update with your link to a text file with new version (just a single line with a number)
 // version is used to do OTA only one time, even if you let the firmware file available on the server.
@@ -31,7 +31,7 @@ const char* fwVersionURL = "http://192.168.1.180/fota/Wind/firmware.version"; //
                    // TSAMPLE must be a subdivision of 60sec, ex 10,12,15, but  not 8, 11, 13...
 #define RATIO   12  // define how many TSAMPLE period are needed to perform average, example 8
 const uint16_t Taverage = TSAMPLE * RATIO;  // Define the average rate:  the ESP will process average value "Taverage" second , example 8x15 = 120sec = 2min
-#define STILL_ALIVE  20  // will emit every STILL_ALIVE even if no wind, must be a multiple of Taverage
+#define STILL_ALIVE  10  // will emit every STILL_ALIVE even if no wind, must be a multiple of Taverage
 
 // macro for debug
 //#define DEBUGMODE   //If you comment this line, the DPRINT & DPRINTLN lines are defined as blank.
@@ -58,7 +58,9 @@ Adafruit_MQTT_Publish windSpeed_pub   = Adafruit_MQTT_Publish(&mqtt, "tweewx/win
 Adafruit_MQTT_Publish windDir_pub     = Adafruit_MQTT_Publish(&mqtt, "tweewx/windDir",     1);
 Adafruit_MQTT_Publish windGust_pub    = Adafruit_MQTT_Publish(&mqtt, "tweewx/windGust",    1);
 Adafruit_MQTT_Publish windGustDir_pub = Adafruit_MQTT_Publish(&mqtt, "tweewx/windGustDir", 1);
-Adafruit_MQTT_Publish Status_pub      = Adafruit_MQTT_Publish(&mqtt, "wind/Status", 1);
+Adafruit_MQTT_Publish Status_pub      = Adafruit_MQTT_Publish(&mqtt, "wind/Status",        1);
+Adafruit_MQTT_Publish Error_pub       = Adafruit_MQTT_Publish(&mqtt, "wind/Errorcode",     1);
+
 Adafruit_MQTT_Publish Version_pub     = Adafruit_MQTT_Publish(&mqtt, "wind/Version", 1);
 Adafruit_MQTT_Publish Debug_pub       = Adafruit_MQTT_Publish(&mqtt, "wind/Debug", 1);
 Adafruit_MQTT_Publish Vsolar_pub      = Adafruit_MQTT_Publish(&mqtt, "weewx/WVsolar", 1);
@@ -233,7 +235,7 @@ void setup() {
 				delay(5);
 				windDir_pub.publish(windDir);
 			}
-			if ((windGust > (windSpeed + 5)) && (windGust<400) && (windGustDir>=0) && (windGustDir<=360) && (windSpeed>1)) { // little filter here too,emit gust only if high enought
+			if ((windGust > (windSpeed + 10)) && (windGust<400) && (windGustDir>=0) && (windGustDir<=360) && (windSpeed>1)) { // little filter here too,emit gust only if high enought
         DPRINTLN("Let's emit Gust *********************************************************");
         setup_wifi(wifi_ssid, wifi_password);
 				setup_wifi(wifi_ssid2, wifi_password);
@@ -278,6 +280,7 @@ void setup() {
 					windDir_pub.publish(windDir);
 				}
 				if (mqtt.connected()) {
+          Status_pub.publish("Offline!");
 					mqtt.disconnect();
 					check_OTA();
 				}
@@ -285,6 +288,7 @@ void setup() {
 			}
 
 			if (mqtt.connected()) {
+        Status_pub.publish("Offline!");
 				mqtt.disconnect();
 			}
 		} //if (ready == 0)
@@ -323,7 +327,7 @@ void setup() {
 		windSpeed = -1;
 		windDir = -1;
 		nextwake = TSAMPLE;
-		All_is_fine = 0;
+
 		DPRINTLN("RE-INIT done !");
 		setup_wifi(wifi_ssid, wifi_password);
 		setup_wifi(wifi_ssid2, wifi_password);
@@ -331,6 +335,7 @@ void setup() {
 		DPRINTLN("*************************************************************");
     setup_mqtt();
     Status_pub.publish("Re-init!");
+    Error_pub.publish(All_is_fine);
     //delay(800);
     digitalWrite(led,LOW);
     delay(100);
@@ -341,6 +346,7 @@ void setup() {
     digitalWrite(led,HIGH);
     delay(100);
     digitalWrite(led,LOW);
+    All_is_fine = 0;
 
 	}         // end if All_is_fine > 0
 
