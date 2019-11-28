@@ -1,4 +1,6 @@
-const float FW_VERSION = 1.47;
+const float FW_VERSION = 1.49;
+//V1.49 bug correction
+//V1.48 add filter on T&H measurement: take 3 samples, keep 2 best ones (filter sporadic spikes)
 //V1.30 - V1.46 debug, change  to pubsubclient lib instead of adafruit mqtt lib
 //  added subscription to receive config message (not used yet)
 //V1.29
@@ -23,7 +25,7 @@ const float FW_VERSION = 1.47;
 #define DPRINTLN(...) //now defines a blank line
 #endif
 
-const char *fwImageURL   = "http://192.168.1.181/fota/THrain/firmware.bin";	  // update with your link to the new firmware bin file.
+const char *fwImageURL = "http://192.168.1.181/fota/THrain/firmware.bin";		  // update with your link to the new firmware bin file.
 const char *fwVersionURL = "http://192.168.1.181/fota/THrain/firmware.version"; // update with your link to a text file with new version (just a single line with a number)
 // version is used to do OTA only one time, even if you let the firmware file available on the server.
 // flashing will occur only if a greater number is available in the "firmware.version" text file.
@@ -64,11 +66,8 @@ IPAddress ip(192, 168, 1, 191);		 // hard coded IP address (make the wifi connex
 IPAddress gateway(192, 168, 1, 254); // set gateway to match your network
 IPAddress subnet(255, 255, 255, 0);  // set subnet mask to match your network
 
-// MQTT server informations /////////////////////////////////////////////////////////////////
-// Create an ESP8266 WiFiClient class to connect to the MQTT server.
+// MQTT Configuration  //////////////////////////////////////////////////////////////////////
 WiFiClient client;
-
-// MQTT subscribe handling /////////////////////////////////////////////////////////////////
 char received_topic[128];
 byte received_payload[128];
 unsigned int received_length;
@@ -82,36 +81,25 @@ void callback(char *topic, byte *payload, unsigned int length)
 }
 IPAddress broker(192, 168, 1, 181);
 PubSubClient mqtt(broker, 1883, callback, client);
-#define STATUS_TOPIC  "THrain/Status"
+#define STATUS_TOPIC "THrain/Status"
 #define VERSION_TOPIC "THrain/Version"
-#define CONFIG_TOPIC  "THrain/Config"
-#define RAIN_TOPIC    "weewx/rain"
-#define VSOLAR_TOPIC  "weewx/Vsolar"
-#define ISOLAR_TOPIC  "weewx/Isolar"
-#define VBAT_TOPIC    "weewx/Vbat"
-#define HUMI_TOPIC    "weewx/outHumidity"
-#define TEMP_TOPIC    "weewx/outTemp"
-#define UV_TOPIC      "weewx/UV"
-#define MQTT_CLIENT_NAME    "ESP_THrain" // make sure it's a unique identifier on your MQTT broker
+#define CONFIG_TOPIC "THrain/Config"
+#define RAIN_TOPIC "weewx/rain"
+#define VSOLAR_TOPIC "weewx/Vsolar"
+#define ISOLAR_TOPIC "weewx/Isolar"
+#define VBAT_TOPIC "weewx/Vbat"
+#define HUMI_TOPIC "weewx/outHumidity"
+#define TEMP_TOPIC "weewx/outTemp"
+#define UV_TOPIC "weewx/UV"
+#define MQTT_CLIENT_NAME "ESP_THrain" // make sure it's a unique identifier on your MQTT broker
 
-// Setup the MQTT client class by passing in the WiFi client and MQTT server and login details.
-/*Adafruit_MQTT_Client mqtt(&client, AIO_SERVER, AIO_SERVERPORT, "ESP_test", AIO_USERNAME, AIO_KEY);
-   Adafruit_MQTT_Publish rain_pub        = Adafruit_MQTT_Publish(&mqtt, "xxweewx/rain", 0);  // QoS 0 because QoS 1 may send several time rain (could be counted several times by weewx
-   Adafruit_MQTT_Publish outTemp_pub     = Adafruit_MQTT_Publish(&mqtt, "xxweewx/outTemp", 1);
-   Adafruit_MQTT_Publish outHumidity_pub = Adafruit_MQTT_Publish(&mqtt, "xxweewx/outHumidity", 1);
-   Adafruit_MQTT_Publish UV_pub          = Adafruit_MQTT_Publish(&mqtt, "xxweewx/UV", 1);
-   Adafruit_MQTT_Publish Vsolar_pub      = Adafruit_MQTT_Publish(&mqtt, "xxweewx/Vsolar", 1);
-   Adafruit_MQTT_Publish Isolar_pub      = Adafruit_MQTT_Publish(&mqtt, "xxweewx/Isolar", 1);
-   Adafruit_MQTT_Publish IsolarA_pub     = Adafruit_MQTT_Publish(&mqtt, "xxweewx/Isolar", 1);
-   Adafruit_MQTT_Publish Vbat_pub        = Adafruit_MQTT_Publish(&mqtt, "xxweewx/Vbat", 1);
-   Adafruit_MQTT_Publish Status_pub      = Adafruit_MQTT_Publish(&mqtt, "xxTHrain/Status", 1);
-   Adafruit_MQTT_Publish Version_pub     = Adafruit_MQTT_Publish(&mqtt, "xxTHrain/Version", 1);
-   Adafruit_MQTT_Publish Debug_pub       = Adafruit_MQTT_Publish(&mqtt, "xxTHrain/Debug", 1);*/
-
-// variables ////////////////////////////////////////////////////////////////////////
+// variables /////////////////////////////////////////////////////////////////////////////
+unsigned long top = 0;
 float rain = -1;
 float temp = -100;
+float temp_array[3] = {-100, -100, -100};
 float humi = -1;
+float humi_array[3] = {-100, -100, -100};
 float temp_buffer = -100;
 float humi_buffer = -1;
 float UVindex = -1;
@@ -131,7 +119,7 @@ int sleep_duration = 150; // deep sleep duration in seconds
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // setup_wifi() : connexion to wifi hotspot
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void wifi_connect(const char *ssid, const char* password, uint8_t timeout)
+void wifi_connect(const char *ssid, const char *password, uint8_t timeout)
 {
 	uint8_t timeout_wifi = timeout;
 	WiFi.begin(ssid, password);
@@ -333,6 +321,126 @@ void check_OTA()
 	DPRINTLN("End of OTA");
 } // end check_OTA()
 
+void measure_temp_humi(byte index)
+{
+	DPRINT("Temperature & Humidity measurement index: ");
+	DPRINTLN(index);
+	if (am2315.begin())
+	{
+		if (am2315.readTemperatureAndHumidity(temp_buffer, humi_buffer))
+		{
+			temp_array[index] = temp_buffer; // if function return false, make sure the value are considered wrong and not emitted
+			humi_array[index] = humi_buffer;
+		}
+		else
+		{
+			temp_array[index] = -100; // if function return false, make sure the value are considered wrong and not emitted
+			humi_array[index] = -100;
+		}
+		top = millis();
+		DPRINTLN("am2315 detected");
+		DPRINT("T1:");
+		DPRINTLN(temp);
+		DPRINT("H1:");
+		DPRINTLN(humi);
+	}
+	else
+	{
+		DPRINTLN("am2315 non detected");
+	}
+}
+
+void process_temp_humi()
+{
+	// TEMPERATURE
+	DPRINT("Temp_array brut: ");
+	DPRINT(temp_array[0]);
+	DPRINT(" ");
+	DPRINT(temp_array[1]);
+	DPRINT(" ");
+	DPRINTLN(temp_array[2]);
+	float buffer = -1000;
+	if (temp_array[0] > temp_array[1])
+	{
+		buffer = temp_array[1];
+		temp_array[1] = temp_array[0];
+		temp_array[0] = buffer;
+	}
+	if (temp_array[1] > temp_array[2])
+	{
+		buffer = temp_array[2];
+		temp_array[2] = temp_array[1];
+		temp_array[1] = buffer;
+		if (temp_array[0] > temp_array[1])
+		{
+			buffer = temp_array[1];
+			temp_array[1] = temp_array[0];
+			temp_array[0] = buffer;
+		}
+	}
+	DPRINT("Temp_array trié: ");
+	DPRINT(temp_array[0]);
+	DPRINT(" ");
+	DPRINT(temp_array[1]);
+	DPRINT(" ");
+	DPRINTLN(temp_array[2]);
+	if ((temp_array[1] - temp_array[0]) < (temp_array[2] - temp_array[1]))
+	{
+		temp = (temp_array[0] + temp_array[1]) / 2;
+		DPRINT("best samples are 0-1: ave temp = ");
+		DPRINTLN(temp);
+	}
+	else
+	{
+		temp = (temp_array[1] + temp_array[2]) / 2;
+		DPRINT("best samples are 1-2: ave temp = ");
+		DPRINTLN(temp);
+	}
+	// HUMIDITY
+	DPRINT("Humi_array brut: ");
+	DPRINT(humi_array[0]);
+	DPRINT(" ");
+	DPRINT(humi_array[1]);
+	DPRINT(" ");
+	DPRINTLN(humi_array[2]);
+	if (humi_array[0] > humi_array[1])
+	{
+		buffer = humi_array[1];
+		humi_array[1] = humi_array[0];
+		humi_array[0] = buffer;
+	}
+	if (humi_array[1] > humi_array[2])
+	{
+		buffer = humi_array[2];
+		humi_array[2] = humi_array[1];
+		humi_array[1] = buffer;
+		if (humi_array[0] > humi_array[1])
+		{
+			buffer = humi_array[1];
+			humi_array[1] = humi_array[0];
+			humi_array[0] = buffer;
+		}
+	}
+	DPRINT("Temp_array trié: ");
+	DPRINT(humi_array[0]);
+	DPRINT(" ");
+	DPRINT(humi_array[1]);
+	DPRINT(" ");
+	DPRINTLN(humi_array[2]);
+	if ((humi_array[1] - humi_array[0]) < (humi_array[2] - humi_array[1]))
+	{
+		humi = (humi_array[0] + humi_array[1]) / 2;
+		DPRINT("best samples are 0-1: ave temp = ");
+		DPRINTLN(humi);
+	}
+	else
+	{
+		humi = (humi_array[1] + humi_array[2]) / 2;
+		DPRINT("best samples are 1-2: ave humi = ");
+		DPRINTLN(humi);
+	}
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //  Start of main programm !
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -360,33 +468,8 @@ void setup()
 	}
 	ina219_solar.begin();
 	ina219_battery.begin();
-	/*hdc1080.begin(0x40);
-	   if(hdc1080.readManufacturerId() == 0x5449) {  // as "begin" does not provide boolean answer, check id to confirm HDC1080 is connected
-	   temp = hdc1080.readTemperature();
-	   humi = hdc1080.readHumidity();
-	   };*/
-	if (am2315.begin())
-	{
-		if (am2315.readTemperatureAndHumidity(temp_buffer, humi_buffer))
-		{
-			temp = temp_buffer; // if function return false, make sure the value are considered wrong and not emitted
-			humi = humi_buffer;
-		}
-		else
-		{
-			temp = -100; // if function return false, make sure the value are considered wrong and not emitted
-			humi = -1;
-		}
-		DPRINTLN("am2315 detected");
-		DPRINT("T:");
-		DPRINTLN(temp);
-		DPRINT("H:");
-		DPRINTLN(humi);
-	}
-	else
-	{
-		DPRINTLN("am2315 non detected");
-	}
+	measure_temp_humi(0);
+	
 	rain = 0.2 * float(rtc.getCount());
 	DPRINT("rain :");
 	DPRINTLN(rain);
@@ -402,11 +485,24 @@ void setup()
 	DPRINTLN(battery_voltage);
 
 	if (uv.begin())
-	{ // power ON veml6075 early to let it wakeup
+	{ // power ON veml6075 early to let it wakeup & warmup
 		uv.powerOn();
 	}
 	DPRINT("Entering setup_wifi()....");
 	setup_wifi();
+	// 2nd temp & humi sample: AM2315 needs to way 2 sec between samples
+	if (millis() > (top + 2000)) {
+		measure_temp_humi(1);
+	} else {
+		while (millis() < (top + 2000))
+		{
+			delay(10);
+		}
+		measure_temp_humi(1);
+	}
+	top = millis();
+	
+
 	DPRINTLN("End of setup_wifi()");
 	check_OTA(); // check for new firmware available on server, if check OTA with occur
 	//OTA must be checked before connecting to MQTT (or after disconnecting MQTT)
@@ -435,13 +531,19 @@ void setup()
 
 	//setup_mqtt();
 
-	// I wise to average T & H on a few samples, but am2315 does not allow fast reading (min 2sec recommanded according to adafruit)
-	// I use the wifi connexion as a delay (a few seconds)
-	if (am2315.readTemperatureAndHumidity(temp_buffer, humi_buffer))
-	{
-		temp = (temp + temp_buffer) / 2; // if function return false, make sure the value are considered wrong and not emitted
-		humi = (humi + humi_buffer) / 2;
-	} // no else here, if we were lucky at 1st measurement, we have a least a value, if not, let's forget T or H this time.
+    if (millis() > (top + 2000)) {
+		measure_temp_humi(2);
+	} else {
+		while (millis() < (top + 2000))
+		{
+			delay(10);
+		}
+		measure_temp_humi(2);
+	}
+
+
+	process_temp_humi();
+
 	mqtt.publish(STATUS_TOPIC, "Publishing!");
 	//Status_pub.publish("Publishing!");
 	delay(50);
@@ -463,7 +565,7 @@ void setup()
 		DPRINT(solar_current);
 		DPRINTLN(" Amps");
 		char solar_currant_str[5];
-		dtostrf(solar_current,5,3,solar_currant_str);
+		dtostrf(solar_current, 5, 3, solar_currant_str);
 		mqtt.publish(ISOLAR_TOPIC, solar_currant_str);
 		delay(50);
 	}
@@ -539,7 +641,7 @@ void setup()
 	//Serial.println("Sleep");
 	DPRINTLN("Go to sleep");
 	delay(15);
-	ESP.deepSleep(sleep_duration * 1000000);
+	ESP.deepSleep( (sleep_duration * 1000000) - (1000*millis() ));
 }
 
 void loop()
