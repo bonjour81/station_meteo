@@ -28,13 +28,13 @@ const char* fwVersionURL = "http://192.168.1.180/fota/Wind/firmware.version"; //
 // general timings
 #define RATIO_KMH_TO_HZ 4
 #define TSAMPLE 10  // Define the sample rate:  the ESP will wake every "TSAMPLE" second  to measure speed & direction, ex every 15sec
-                   // TSAMPLE must be a subdivision of 60sec, ex 10,12,15, but  not 8, 11, 13...
+                    // TSAMPLE must be a subdivision of 60sec, ex 10,12,15, but  not 8, 11, 13...
 #define RATIO   12  // define how many TSAMPLE period are needed to perform average, example 8
 const uint16_t Taverage = TSAMPLE * RATIO;  // Define the average rate:  the ESP will process average value "Taverage" second , example 8x15 = 120sec = 2min
 #define STILL_ALIVE  10  // will emit every STILL_ALIVE even if no wind, must be a multiple of Taverage
 
 // macro for debug
-//#define DEBUGMODE   //If you comment this line, the DPRINT & DPRINTLN lines are defined as blank.
+#define DEBUGMODE   //If you comment this line, the DPRINT & DPRINTLN lines are defined as blank.
 #ifdef  DEBUGMODE    //Macros are usually in all capital letters.
   #define DPRINT(...)    Serial.print(__VA_ARGS__)     //DPRINT is a macro, debug print
   #define DPRINTLN(...)  Serial.println(__VA_ARGS__)   //DPRINTLN is a macro, debug print with new line
@@ -173,7 +173,7 @@ void setup() {
 
 				}
 			}
-		} else { // If no wind, keep same dir as previous
+		} else { // If no wind, keep same dir as previous: we need a value to calculate average windDir
 			if (Tindex == 0) {
 				windGustDir = Table_windDir[RATIO - 1];
 			} else {
@@ -205,7 +205,6 @@ void setup() {
 		DPRINTLN(" #"); DPRINT("Table_windDir:");
 		for (byte i = 0; i < RATIO; i = i + 1) {
 			DPRINT(" ["); DPRINT(i); DPRINT("]={"); DPRINT(Table_windDir[i]); DPRINT("}");
-
 		}
 		DPRINTLN(" #");
 		DPRINT("windSpeed:"); DPRINT(windSpeed); DPRINT("km/h / windDir:"); DPRINT(windDir); DPRINT("° ");
@@ -227,8 +226,8 @@ void setup() {
 
 		if (ready == 0) {  // does not allow emit a while after power on (until we have enough sample for average measurements)
 			if ((Tindex == 0) && (windSpeed>1) && (windSpeed<400) && (windDir>=0) && (windDir<=360)) { // let's emit every 2min, if valid data & if speed > 1km/h  (let's save battery if below 1km/h)
-        DPRINTLN("Let's emit average wind ************************************************");
-        setup_wifi(wifi_ssid, wifi_password);
+				DPRINTLN("Let's emit average wind ************************************************");
+				setup_wifi(wifi_ssid, wifi_password);
 				setup_wifi(wifi_ssid2, wifi_password);
 				setup_mqtt();
 				windSpeed_pub.publish(windSpeed);
@@ -236,8 +235,8 @@ void setup() {
 				windDir_pub.publish(windDir);
 			}
 			if ((windGust > (windSpeed + 10)) && (windGust<400) && (windGustDir>=0) && (windGustDir<=360) && (windSpeed>1)) { // little filter here too,emit gust only if high enought
-        DPRINTLN("Let's emit Gust *********************************************************");
-        setup_wifi(wifi_ssid, wifi_password);
+				DPRINTLN("Let's emit Gust *********************************************************");
+				setup_wifi(wifi_ssid, wifi_password);
 				setup_wifi(wifi_ssid2, wifi_password);
 				setup_mqtt();
 				if (Tindex == 0) {
@@ -248,10 +247,10 @@ void setup() {
 				windGustDir_pub.publish(windGustDir);
 			}
 			if ((Tindex == 0) && ((minute() % STILL_ALIVE) == 0)) { // let's emit a few times even if there is no wind (so we know the sensor is alive), we can use it to send also battery & solar situation
-        DPRINTLN("Let's emit STILL_ALIVE min message");
+				DPRINTLN("Let's emit STILL_ALIVE min message");
 				solar_voltage = ina219_solar.getBusVoltage_V();     DPRINT("solar_voltage:");   DPRINTLN(solar_voltage);
 				solar_current = ina219_solar.getCurrent_mA();       DPRINT("solar_current:");   DPRINTLN(solar_current);
-        solar_current = 0.001 * solar_current; // convert to Amps instead of mA
+				solar_current = 0.001 * solar_current; // convert to Amps instead of mA
 				battery_voltage = ina219_battery.getBusVoltage_V(); DPRINT("battery_voltage:"); DPRINTLN(battery_voltage);
 				if ((solar_voltage >= 0) && (solar_voltage < 20.0)) {
 					setup_wifi(wifi_ssid, wifi_password);
@@ -280,7 +279,7 @@ void setup() {
 					windDir_pub.publish(windDir);
 				}
 				if (mqtt.connected()) {
-          Status_pub.publish("Offline!");
+					Status_pub.publish("Offline!");
 					mqtt.disconnect();
 					check_OTA();
 				}
@@ -288,7 +287,7 @@ void setup() {
 			}
 
 			if (mqtt.connected()) {
-        Status_pub.publish("Offline!");
+				Status_pub.publish("Offline!");
 				mqtt.disconnect();
 			}
 		} //if (ready == 0)
@@ -304,7 +303,7 @@ void setup() {
 		DPRINTLN("*************************************************************");
 		DPRINT(  " Errors or power on occured, code:"); DPRINTLN(All_is_fine);
 		DPRINTLN("RE-INIT on going !");
-    digitalWrite(led,HIGH);
+		digitalWrite(led,HIGH);
 		setTime(00, 00, 00, 13, 4, 2019);         // set time to 0 on DS3232M, we don't care about day or hours, only minutes & seconds
 		RTC.set(now());
 		counter.setMode(MODE_EVENT_COUNTER);         // will set non zero value in register 0x00, so if no POR occured at next loop, register will not be cleared
@@ -333,20 +332,20 @@ void setup() {
 		setup_wifi(wifi_ssid2, wifi_password);
 		check_OTA();
 		DPRINTLN("*************************************************************");
-    setup_mqtt();
-    Status_pub.publish("Re-init!");
-    Error_pub.publish(All_is_fine);
-    //delay(800);
-    digitalWrite(led,LOW);
-    delay(100);
-    digitalWrite(led,HIGH);
-    delay(100);
-    digitalWrite(led,LOW);
-    delay(100);
-    digitalWrite(led,HIGH);
-    delay(100);
-    digitalWrite(led,LOW);
-    All_is_fine = 0;
+		setup_mqtt();
+		Status_pub.publish("Re-init!");
+		Error_pub.publish(All_is_fine);
+		//delay(800);
+		digitalWrite(led,LOW);
+		delay(100);
+		digitalWrite(led,HIGH);
+		delay(100);
+		digitalWrite(led,LOW);
+		delay(100);
+		digitalWrite(led,HIGH);
+		delay(100);
+		digitalWrite(led,LOW);
+		All_is_fine = 0;
 
 	}         // end if All_is_fine > 0
 
