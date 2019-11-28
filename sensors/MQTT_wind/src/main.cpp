@@ -15,9 +15,6 @@ const char* fwVersionURL = "http://192.168.1.180/fota/Wind/firmware.version"; //
 #include "PCF8583.h"    //https://bitbucket.org/xoseperez/pcf8583.git
 #include <Adafruit_ADS1015.h> // library for ADS1115 too
 #include <Adafruit_INA219.h>
-// MQTT
-#include "Adafruit_MQTT.h"
-#include "Adafruit_MQTT_Client.h"
 // wifi & mqtt credentials
 #include "passwords.h"
 

@@ -1,4 +1,4 @@
-const float FW_VERSION = 1.46;
+const float FW_VERSION = 1.47;
 //V1.30 - V1.46 debug, change  to pubsubclient lib instead of adafruit mqtt lib
 //  added subscription to receive config message (not used yet)
 //V1.29
@@ -14,7 +14,7 @@ const float FW_VERSION = 1.46;
 // added OTA via http server
 // added debug mode for serial monitoring
 
-#define DEBUGMODE								  //If you comment this line, the DPRINT & DPRINTLN lines are defined as blank.
+//#define DEBUGMODE								  //If you comment this line, the DPRINT & DPRINTLN lines are defined as blank.
 #ifdef DEBUGMODE								  //Macros are usually in all capital letters.
 #define DPRINT(...) Serial.print(__VA_ARGS__)	 //DPRINT is a macro, debug print
 #define DPRINTLN(...) Serial.println(__VA_ARGS__) //DPRINTLN is a macro, debug print with new line
@@ -23,15 +23,8 @@ const float FW_VERSION = 1.46;
 #define DPRINTLN(...) //now defines a blank line
 #endif
 
-// root for Status topic (not to be analysed by weewx)
-#define USE_SERIAL Serial
-
-// root for measurements topic for weewx  (for example, outTemp will be published on  WEEWX_TOPIC/outTemp )
-//#define WEEWX_TOPIC xxweewx
-
-
-const char *fwImageURL = "http://192.168.1.181/fota/test/firmware.bin";		  // update with your link to the new firmware bin file.
-const char *fwVersionURL = "http://192.168.1.181/fota/test/firmware.version"; // update with your link to a text file with new version (just a single line with a number)
+const char *fwImageURL   = "http://192.168.1.181/fota/THrain/firmware.bin";	  // update with your link to the new firmware bin file.
+const char *fwVersionURL = "http://192.168.1.181/fota/THrain/firmware.version"; // update with your link to a text file with new version (just a single line with a number)
 // version is used to do OTA only one time, even if you let the firmware file available on the server.
 // flashing will occur only if a greater number is available in the "firmware.version" text file.
 // take care the number in text file is compared to "FW_VERSION" in the code => this const shall be incremented at each update.
@@ -39,7 +32,7 @@ const char *fwVersionURL = "http://192.168.1.181/fota/test/firmware.version"; //
 #include <Arduino.h>
 #include <Wire.h>
 #include <ESP8266WiFi.h>
-#include <ESP8266WiFiMulti.h>
+#include <ESP8266WiFiMulti.h> // may be used to optimise connexion to best AP.
 #include <ESP8266HTTPClient.h>
 #include <ESP8266httpUpdate.h>
 #include <PCF8583.h>
@@ -48,6 +41,7 @@ const char *fwVersionURL = "http://192.168.1.181/fota/test/firmware.version"; //
 //#include <ClosedCube_HDC1080.h>
 #include <Adafruit_AM2315.h> // => Modified library from https://github.com/switchdoclabs/SDL_ESP8266_AM2315   I have switched pin 4&5 in cpp file wire.begin
 #include <PubSubClient.h>
+
 // wifi & mqtt credentials
 #include "passwords.h"
 
@@ -66,7 +60,7 @@ VEML6075 uv; // sparkfun lib sensor declaration
 Adafruit_AM2315 am2315; // default address is 0x05C (!cannot be changed)
 
 // WiFi connexion informations //////////////////////////////////////////////////////////////
-IPAddress ip(192, 168, 1, 199);		 // hard coded IP address (make the wifi connexion faster (save battery), no need for DHCP)
+IPAddress ip(192, 168, 1, 191);		 // hard coded IP address (make the wifi connexion faster (save battery), no need for DHCP)
 IPAddress gateway(192, 168, 1, 254); // set gateway to match your network
 IPAddress subnet(255, 255, 255, 0);  // set subnet mask to match your network
 
@@ -88,17 +82,17 @@ void callback(char *topic, byte *payload, unsigned int length)
 }
 IPAddress broker(192, 168, 1, 181);
 PubSubClient mqtt(broker, 1883, callback, client);
-#define STATUS_TOPIC  "xxTHrain/Status"
-#define VERSION_TOPIC "xxTHrain/Version"
-#define CONFIG_TOPIC  "xxTHrain/Config"
-#define RAIN_TOPIC    "xxweewx/rain"
-#define VSOLAR_TOPIC  "xxweewx/Vsolar"
-#define ISOLAR_TOPIC  "xxweewx/Isolar"
-#define VBAT_TOPIC    "xxweewx/Vbat"
-#define HUMI_TOPIC    "xxweewx/outHumidity"
-#define TEMP_TOPIC    "xxweewx/outTemp"
-#define UV_TOPIC      "xxweewx/UV"
-#define MQTT_CLIENT_NAME    "ESP_TH_test" // make sure it's a unique identifier on your MQTT broker
+#define STATUS_TOPIC  "THrain/Status"
+#define VERSION_TOPIC "THrain/Version"
+#define CONFIG_TOPIC  "THrain/Config"
+#define RAIN_TOPIC    "weewx/rain"
+#define VSOLAR_TOPIC  "weewx/Vsolar"
+#define ISOLAR_TOPIC  "weewx/Isolar"
+#define VBAT_TOPIC    "weewx/Vbat"
+#define HUMI_TOPIC    "weewx/outHumidity"
+#define TEMP_TOPIC    "weewx/outTemp"
+#define UV_TOPIC      "weewx/UV"
+#define MQTT_CLIENT_NAME    "ESP_THrain" // make sure it's a unique identifier on your MQTT broker
 
 // Setup the MQTT client class by passing in the WiFi client and MQTT server and login details.
 /*Adafruit_MQTT_Client mqtt(&client, AIO_SERVER, AIO_SERVERPORT, "ESP_test", AIO_USERNAME, AIO_KEY);
