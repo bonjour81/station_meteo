@@ -1,4 +1,5 @@
-const float FW_VERSION = 1.51;
+const float FW_VERSION = 1.52;
+//V1.52 : change parameters /timings in case of wifi connexion failure to save battery.
 //V1.50 : switched to SHT31 TH sensor, change INA219 address.
 //V1.49 bug correction
 //V1.48 add filter on T&H measurement: take 3 samples, keep 2 best ones (filter sporadic spikes)
@@ -172,7 +173,7 @@ void setup_wifi()
     }
     // try 1st SSID (if you have 2 hotspots)
     DPRINT("Try to connect 1st wifi:");
-    wifi_connect(ssid1, password1, 30);
+    wifi_connect(ssid1, password1, 6);
     // if connexion is successful, let's go to next, no need for SSID2
     if (WiFi.status() == WL_CONNECTED) {
         DPRINTLN("Wifi ssid1 connected");
@@ -181,14 +182,14 @@ void setup_wifi()
         DPRINTLN("Let's try connecting 2nd wifi SSID");
     }
     // let's try SSID2 (if ssid1 did not worked)
-    wifi_connect(ssid2, password2, 30);
+    wifi_connect(ssid2, password2, 6);
     if (WiFi.status() == WL_CONNECTED) {
         DPRINTLN("Wifi ssid2 connected");
         return; // if connexion is successful, let's go to next, no need for SSID2
     } else {
         DPRINTLN("let's sleep and retry later...");
         delay(50);
-        ESP.deepSleep(sleep_duration * 1000000); // if no connexion, deepsleep some time, after will restart & retry (= reset)
+        ESP.deepSleep(4 * sleep_duration * 1000000); // if no connexion, deepsleep some time, after will restart & retry (= reset)
     }
 }
 
@@ -245,7 +246,7 @@ void setup_mqtt()
         }
         retries--;
         if (retries == 0) {
-            ESP.deepSleep(sleep_duration * 1000000); // if no connexion, deepsleep for 20sec, after will restart (= reset)
+            ESP.deepSleep(4 * sleep_duration * 1000000); // if no connexion, deepsleep for 20sec, after will restart (= reset)
         }
     }
     mqtt.publish(STATUS_TOPIC, "Online!");
