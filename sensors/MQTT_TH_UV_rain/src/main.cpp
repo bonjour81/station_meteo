@@ -1,4 +1,4 @@
-const float FW_VERSION = 1.52;
+const float FW_VERSION = 1.53;
 //V1.52 : change parameters /timings in case of wifi connexion failure to save battery.
 //V1.50 : switched to SHT31 TH sensor, change INA219 address.
 //V1.49 bug correction
@@ -85,16 +85,16 @@ void callback(char* topic, byte* payload, unsigned int length)
 }
 IPAddress broker(192, 168, 1, 181);
 PubSubClient mqtt(broker, 1883, callback, client);
-#define STATUS_TOPIC  "THrain/Status"
+#define STATUS_TOPIC "THrain/Status"
 #define VERSION_TOPIC "THrain/Version"
-#define CONFIG_TOPIC  "THrain/Config"
-#define RAIN_TOPIC    "weewx/rain"
-#define VSOLAR_TOPIC  "weewx/Vsolar"
-#define ISOLAR_TOPIC  "weewx/Isolar"
-#define VBAT_TOPIC    "weewx/Vbat"
-#define HUMI_TOPIC    "weewx/outHumidity"
-#define TEMP_TOPIC    "weewx/outTemp"
-#define UV_TOPIC      "weewx/UV"
+#define CONFIG_TOPIC "THrain/Config"
+#define RAIN_TOPIC "weewx/rain"
+#define VSOLAR_TOPIC "weewx/Vsolar"
+#define ISOLAR_TOPIC "weewx/Isolar"
+#define VBAT_TOPIC "weewx/Vbat"
+#define HUMI_TOPIC "weewx/outHumidity"
+#define TEMP_TOPIC "weewx/outTemp"
+#define UV_TOPIC "weewx/UV"
 #define MQTT_CLIENT_NAME "ESP_THrain" // make sure it's a unique identifier on your MQTT broker
 
 // variables /////////////////////////////////////////////////////////////////////////////
@@ -175,10 +175,37 @@ void setup_wifi()
     DPRINT("Try to connect 1st wifi:");
     wifi_connect(ssid1, password1, 6);
     // if connexion is successful, let's go to next, no need for SSID2
+    DPRINTLN("");
     if (WiFi.status() == WL_CONNECTED) {
         DPRINTLN("Wifi ssid1 connected");
         return;
     } else {
+        switch (WiFi.status()) {
+        case WL_NO_SHIELD:
+            DPRINTLN("255 :WL_NO_SHIELD");
+            break;
+        case WL_IDLE_STATUS:
+            DPRINTLN("0 :WL_IDLE_STATUS");
+            break;
+        case WL_NO_SSID_AVAIL:
+            DPRINTLN("1 :WL_NO_SSID_AVAIL");
+            break;
+        case WL_SCAN_COMPLETED:
+            DPRINTLN("2 :WL_SCAN_COMPLETED");
+            break;
+        case WL_CONNECTED:
+            DPRINTLN("3 :WL_CONNECTED");
+            break;
+        case WL_CONNECT_FAILED:
+            DPRINTLN("4 :WL_CONNECT_FAILED");
+            break;
+        case WL_CONNECTION_LOST:
+            DPRINTLN("5 :WL_CONNECTION_LOST");
+            break;
+        case WL_DISCONNECTED:
+            DPRINTLN("6 :WL_DISCONNECTED");
+            break;
+        }
         DPRINTLN("Let's try connecting 2nd wifi SSID");
     }
     // let's try SSID2 (if ssid1 did not worked)
@@ -187,9 +214,37 @@ void setup_wifi()
         DPRINTLN("Wifi ssid2 connected");
         return; // if connexion is successful, let's go to next, no need for SSID2
     } else {
+        DPRINT("2nd try Failed: ")
+        switch (WiFi.status()) {
+        case WL_NO_SHIELD:
+            DPRINTLN("255 :WL_NO_SHIELD");
+            break;
+        case WL_IDLE_STATUS:
+            DPRINTLN("0 :WL_IDLE_STATUS");
+            break;
+        case WL_NO_SSID_AVAIL:
+            DPRINTLN("1 :WL_NO_SSID_AVAIL");
+            break;
+        case WL_SCAN_COMPLETED:
+            DPRINTLN("2 :WL_SCAN_COMPLETED");
+            break;
+        case WL_CONNECTED:
+            DPRINTLN("3 :WL_CONNECTED");
+            break;
+        case WL_CONNECT_FAILED:
+            DPRINTLN("4 :WL_CONNECT_FAILED");
+            break;
+        case WL_CONNECTION_LOST:
+            DPRINTLN("5 :WL_CONNECTION_LOST");
+            break;
+        case WL_DISCONNECTED:
+            DPRINTLN("6 :WL_DISCONNECTED");
+            break;
+        }
         DPRINTLN("let's sleep and retry later...");
+        WiFi.disconnect();
         delay(50);
-        ESP.deepSleep(4 * sleep_duration * 1000000); // if no connexion, deepsleep some time, after will restart & retry (= reset)
+        ESP.deepSleep(sleep_duration * 5 * 1000000); // if no connexion, deepsleep some time, after will restart & retry (= reset)
     }
 }
 
@@ -209,7 +264,7 @@ void setup_mqtt()
     DPRINT("Connecting...");
     while (!client.connected()) {
         mqtt.disconnect();
-        delay(1000);
+        delay(500);
         mqtt.connect(MQTT_CLIENT_NAME, BROKER_USERNAME, BROKER_KEY);
         DPRINT("MQTT connexion state is: ");
         switch (mqtt.state()) {
@@ -245,8 +300,10 @@ void setup_mqtt()
             break;
         }
         retries--;
-        if (retries == 0) {
-            ESP.deepSleep(4 * sleep_duration * 1000000); // if no connexion, deepsleep for 20sec, after will restart (= reset)
+        if (retries < 1) {
+            WiFi.disconnect();
+            delay(50);
+            ESP.deepSleep(sleep_duration * 5 * 1000000); // if no connexion, deepsleep for 20sec, after will restart (= reset)
         }
     }
     mqtt.publish(STATUS_TOPIC, "Online!");
@@ -324,7 +381,7 @@ void measure_temp_humi(byte index)
             humi_array[index] = -100;
         }
     }
-/*
+    /*
     if (am2315.begin()) {
         if (am2315.readTemperatureAndHumidity(temp_buffer, humi_buffer)) {
             temp_array[index] = temp_buffer; // if function return false, make sure the value are considered wrong and not emitted
