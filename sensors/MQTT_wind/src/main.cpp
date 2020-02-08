@@ -1,5 +1,5 @@
 // MQTT wind sensor for weewx
-const float FW_VERSION = 1.23;
+const float FW_VERSION = 1.32;
 const char* fwImageURL = "http://192.168.1.181/fota/Wind/firmware.bin"; // update with your link to the new firmware bin file.
 const char* fwVersionURL = "http://192.168.1.181/fota/Wind/firmware.version"; // update with your link to a text file with new version (just a single line with a number)
 // version is used to do OTA only one time, even if you let the firmware file available on the server.
@@ -29,9 +29,9 @@ const char* fwVersionURL = "http://192.168.1.181/fota/Wind/firmware.version"; //
 #define TSAMPLE 10
     // Define the sample rate:  the ESP will wake every "TSAMPLE" second  to measure speed & direction, ex every 15sec
     // TSAMPLE must be a subdivision of 60sec, ex 10,12,15, but  not 8, 11, 13...
-#define RATIO 12 // define how many TSAMPLE period are needed to perform average, example 8
+#define RATIO 6 // define how many TSAMPLE period are needed to perform average, example 8
 const uint16_t Taverage = TSAMPLE * RATIO; // Define the average rate:  the ESP will process average value "Taverage" second , example 8x15 = 120sec = 2min
-#define STILL_ALIVE 10 // will emit every STILL_ALIVE min even if no wind, must be a multiple of Taverage
+#define STILL_ALIVE 4 // will emit every STILL_ALIVE min even if no wind, must be a multiple of Taverage
 
 // macro for debug
 //#define DEBUGMODE //If you comment this line, the DPRINT & DPRINTLN lines are defined as blank.
@@ -66,19 +66,29 @@ void callback(char* topic, byte* payload, unsigned int length)
 }
 IPAddress broker(192, 168, 1, 181);
 PubSubClient mqtt(broker, 1883, callback, client);
-#define STATUS_TOPIC "Wind/Status"
-#define VERSION_TOPIC "Wind/Version"
-#define CONFIG_TOPIC "Wind/Config"
-#define ERROR_TOPIC "Wind/Error"
-#define WINDSPEED_TOPIC "tweewx/windSpeed"
-#define WINDDIR_TOPIC "tweewx/windDir"
-#define WINDGUST_TOPIC "tweewx/windGust"
-#define WINDGUSTDIR_TOPIC "tweewx/windGustDir"
-#define VSOLAR_TOPIC "tweewx/WVsolar"
-#define ISOLAR_TOPIC "tweewx/WIsolar"
-#define VBAT_TOPIC "tweewx/WVbat"
+#define STATUS_TOPIC "wind/Status"
+#define VERSION_TOPIC "wind/Version"
+#define CONFIG_TOPIC "wind/Config"
+#define ERROR_TOPIC "wind/Error"
+#define WINDSPEED_TOPIC "weewx/windSpeed"
+#define WINDDIR_TOPIC "weewx/windDir"
+#define WINDGUST_TOPIC "weewx/windGust"
+#define WINDGUSTDIR_TOPIC "weewx/windGustDir"
+#define VSOLAR_TOPIC "weewx/WVsolar"
+#define ISOLAR_TOPIC "weewx/WIsolar"
+#define VBAT_TOPIC "weewx/WVbat"
 #define MQTT_CLIENT_NAME "ESP32_WIND" // make sure it's a unique identifier on your MQTT broker
 
+#define WINDSPEED_TTOPIC "tttweewx/windSpeed"
+#define WINDDIR_TTOPIC "tttweewx/windDir"
+#define WINDGUST_TTOPIC "tttweewx/windGust"
+#define WINDGUSTDIR_TTOPIC "tttweewx/windGustDir"
+#define WINDGUSTMAX_TTOPIC "tttweewx/windGustMax"
+#define WINDGUSTMAXDIR_TTOPIC "tttweewx/windGustMaxDir"
+
+#define VDIR_TTOPIC "tttweewx/Vdir"
+#define VREF_TTOPIC "tttweewx/Vref"
+#define INDEX_TTOPIC "tttweewx/index"
 /*
 Adafruit_MQTT_Client mqtt(&client, AIO_SERVER, AIO_SERVERPORT,"ESP_wind", AIO_USERNAME, AIO_KEY);
 Adafruit_MQTT_Publish windSpeed_pub   = Adafruit_MQTT_Publish(&mqtt, "tweewx/windSpeed",   1);
@@ -118,9 +128,13 @@ RTC_DATA_ATTR uint8_t Tindex;
 RTC_DATA_ATTR uint8_t ready; // data are valids when it ready 0...used to avoid sending during 1st minutes when we don't have  valid average value
 RTC_DATA_ATTR uint16_t pulsecount;
 RTC_DATA_ATTR uint16_t prev_pulsecount;
+RTC_DATA_ATTR int windGustMaxDir;
+RTC_DATA_ATTR float windGustMax;
+
 
 uint16_t total_pulsecount;
-uint16_t total_dircount;
+//uint16_t total_dircount;
+long total_dircount;
 uint8_t nextwake;
 time_t t;
 // values ready to emit
@@ -202,7 +216,7 @@ void setup()
             DPRINT(Vref);
             DPRINT(" Vdir:");
             DPRINTLN(Vdir);
-            if (Vdir <= Vref && Vref > 19000 && Vref < 21000 && Vdir >= 0) { // calculate wind direction
+            if (Vdir <= Vref && Vref > 17000 && Vref < 21000 && Vdir >= 0) { // calculate wind direction
                 if (Vdir > (Vref - 256)) {
                     windGustDir = 360; // just in case the calibration is wrong and Vdir gets higher than corrected reference.
                 } else {
@@ -211,9 +225,9 @@ void setup()
             }
         } else { // If no wind, keep same dir as previous: we need a value to calculate average windDir
             if (Tindex == 0) {
-                windGustDir = Table_windDir[RATIO - 1];
+                windGustDir = int(Table_windDir[RATIO - 1]);
             } else {
-                windGustDir = Table_windDir[Tindex - 1];
+                windGustDir = int(Table_windDir[Tindex - 1]);
             }
         }
 
@@ -229,7 +243,47 @@ void setup()
         }
         windGust = RATIO_KMH_TO_HZ * float(pulsecount - prev_pulsecount) / TSAMPLE;
         windSpeed = RATIO_KMH_TO_HZ * float(total_pulsecount) / Taverage;
-        windDir = total_dircount / RATIO;
+        windDir = int(total_dircount / RATIO);
+        if (windGustMax < windGust) {
+            windGustMax = windGust;
+            windGustMaxDir = windGustDir;
+        }
+
+        //************************************************ for debug *****************************************
+        setup_wifi();
+        setup_mqtt();
+        delay(10);
+        mqtt.publish(STATUS_TOPIC, "debug!");
+        delay(10);
+        mqtt.publish(INDEX_TTOPIC, String(Tindex).c_str());
+        delay(10);
+
+        //mqtt.publish(WINDGUSTDIR_TTOPIC, String(windGustDir).c_str());
+        //delay(10);
+        mqtt.publish(WINDGUST_TTOPIC, String(windGust).c_str());
+        delay(10);
+        //mqtt.publish(WINDGUSTMAXDIR_TTOPIC, String(windGustMaxDir).c_str());
+        //delay(10);
+        mqtt.publish(WINDGUSTMAX_TTOPIC, String(windGustMax).c_str());
+        delay(10);
+        
+        //mqtt.publish(VDIR_TTOPIC, String(Vdir).c_str());
+        //delay(10);
+        //mqtt.publish(VREF_TTOPIC, String(Vref).c_str());
+        //delay(10);
+
+        mqtt.publish(STATUS_TOPIC, "enddebug!");
+        delay(10);
+
+        if (mqtt.connected()) {
+            mqtt.publish(STATUS_TOPIC, "Offline!");
+            mqtt.disconnect();
+        }
+        delay(10);
+        if (WiFi.status() == WL_CONNECTED) {
+            WiFi.disconnect();
+        }
+        //************************************************ end for debug *****************************************
 
 #ifdef DEBUGMODE
         DPRINT("Tindex:");
@@ -282,6 +336,8 @@ void setup()
             DPRINTLN(counter.getCount());
             prev_pulsecount = 0;
             pulsecount = 0;
+            windGustMax = -1;
+            windGustMaxDir = -1;
         }
         if (ready > 0) {
             ready--;
@@ -292,20 +348,22 @@ void setup()
                 DPRINTLN("Let's emit average wind ************************************************");
                 setup_wifi();
                 setup_mqtt();
+                delay(10);
                 mqtt.publish(WINDSPEED_TOPIC, String(windSpeed).c_str());
-                delay(5);
+                delay(10);
                 mqtt.publish(WINDDIR_TOPIC, String(windDir).c_str());
             }
-            if ((windGust > (windSpeed + 10)) && (windGust < 400) && (windGustDir >= 0) && (windGustDir <= 360) && (windSpeed > 1)) { // little filter here too,emit gust only if high enought
+         //   if ((windGust > (windSpeed + 5)) && (windGust < 400) && (windGustDir >= 0) && (windGustDir <= 360) && (windSpeed > 1)) { // little filter here too,emit gust only if high enought
+            if ((Tindex == 0) && (windGustMax > windSpeed) && (windGustMax < 400) && (windGustMaxDir >= 0) && (windGustMaxDir <= 360) && (windGustMax > 1)) { // little filter here too,emit gust only if high enought
                 DPRINTLN("Let's emit Gust *********************************************************");
                 setup_wifi();
                 setup_mqtt();
-                if (Tindex == 0) {
-                    delay(5);
-                }
-                mqtt.publish(WINDGUST_TOPIC, String(windGust).c_str());
-                delay(5);
-                mqtt.publish(WINDGUSTDIR_TOPIC, String(windGustDir).c_str());
+                /*if (Tindex == 0) {
+                    delay(10);
+                }*/
+                mqtt.publish(WINDGUST_TOPIC, String(windGustMax).c_str());
+                delay(10);
+                mqtt.publish(WINDGUSTDIR_TOPIC, String(windGustMaxDir).c_str());
             }
             if ((Tindex == 0) && ((minute() % STILL_ALIVE) == 0)) { // let's emit a few times even if there is no wind (so we know the sensor is alive), we can use it to send also battery & solar situation
                 DPRINTLN("Let's emit STILL_ALIVE min message");
@@ -315,34 +373,44 @@ void setup()
                 solar_current = ina219_solar.getCurrent_mA();
                 DPRINT("solar_current:");
                 DPRINTLN(solar_current);
-                //solar_current = 0.001 * solar_current; // convert to Amps instead of mA
+                solar_current = 0.001 * solar_current; // convert to Amps instead of mA
                 battery_voltage = ina219_battery.getBusVoltage_V();
                 DPRINT("battery_voltage:");
                 DPRINTLN(battery_voltage);
+                delay(10);
                 if ((solar_voltage >= 0) && (solar_voltage < 20.0)) {
                     setup_wifi();
                     setup_mqtt();
                     mqtt.publish(VSOLAR_TOPIC, String(solar_voltage).c_str());
-                    delay(5);
+                    delay(10);
                 }
                 if ((solar_current >= 0) && (solar_current < 2000.0)) {
                     setup_wifi();
                     setup_mqtt();
-                    mqtt.publish(ISOLAR_TOPIC, String(solar_current).c_str());
-                    delay(5);
+                    char solar_currant_str[5];
+                    dtostrf(solar_current, 5, 3, solar_currant_str);
+                    mqtt.publish(ISOLAR_TOPIC, solar_currant_str);
+                    //mqtt.publish(ISOLAR_TOPIC, String(solar_current).c_str());
+                    delay(10);
                 }
                 if ((battery_voltage >= 0) && (battery_voltage < 20.0)) {
                     setup_wifi();
                     setup_mqtt();
                     mqtt.publish(VBAT_TOPIC, String(battery_voltage).c_str());
-                    delay(5);
+                    delay(10);
                 }
+
                 if ((windSpeed >= 0) && (windSpeed <= 1) && (windDir >= 0) && (windDir <= 360)) {
+                    setup_wifi();
+                    setup_mqtt();
                     mqtt.publish(WINDSPEED_TOPIC, String(windSpeed).c_str());
-                    delay(5);
+                    delay(10);
                     mqtt.publish(WINDDIR_TOPIC, String(windDir).c_str());
+                    delay(10);
                 }
                 if (mqtt.connected()) {
+                    setup_wifi();
+                    setup_mqtt();
                     mqtt.publish(STATUS_TOPIC, "Offline!");
                     mqtt.disconnect();
                     check_OTA();
@@ -382,7 +450,9 @@ void setup()
         prev_pulsecount = 0;
         total_pulsecount = 0;
         windGustDir = -1;
+        windGustMaxDir = -1;
         windGust = -1;
+        windGustMax = -1;
         windSpeed = -1;
         windDir = -1;
         nextwake = TSAMPLE;
@@ -414,7 +484,7 @@ void setup()
         solar_current = ina219_solar.getCurrent_mA();
         DPRINT("solar_current:");
         DPRINTLN(solar_current);
-        //solar_current = 0.001 * solar_current; // convert to Amps instead of mA
+        solar_current = 0.001 * solar_current; // convert to Amps instead of mA
         battery_voltage = ina219_battery.getBusVoltage_V();
         DPRINT("battery_voltage:");
         DPRINTLN(battery_voltage);
@@ -422,19 +492,22 @@ void setup()
             setup_wifi();
             setup_mqtt();
             mqtt.publish(VSOLAR_TOPIC, String(solar_voltage).c_str());
-            delay(5);
+            delay(10);
         }
         if ((solar_current >= 0) && (solar_current < 2000.0)) {
             setup_wifi();
             setup_mqtt();
-            mqtt.publish(ISOLAR_TOPIC, String(solar_current).c_str());
-            delay(5);
+            char solar_currant_str[5];
+            dtostrf(solar_current, 5, 3, solar_currant_str);
+            mqtt.publish(ISOLAR_TOPIC, solar_currant_str);
+            //mqtt.publish(ISOLAR_TOPIC, String(solar_current).c_str());
+            delay(10);
         }
         if ((battery_voltage >= 0) && (battery_voltage < 20.0)) {
             setup_wifi();
             setup_mqtt();
             mqtt.publish(VBAT_TOPIC, String(battery_voltage).c_str());
-            delay(5);
+            delay(10);
         }
     } // end if All_is_fine > 0
 
