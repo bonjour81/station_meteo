@@ -1,5 +1,5 @@
 // MQTT wind sensor for weewx
-const float FW_VERSION = 1.41;
+const float FW_VERSION = 1.42;
 const char* fwImageURL = "http://192.168.1.181/fota/Wind/firmware.bin"; // update with your link to the new firmware bin file.
 const char* fwVersionURL = "http://192.168.1.181/fota/Wind/firmware.version";
 // update with your link to a text file with new version (just a single line with a number)
@@ -26,8 +26,8 @@ const char* fwVersionURL = "http://192.168.1.181/fota/Wind/firmware.version";
 #define led 13
 
 // general timings
-#define RATIO_KMH_TO_HZ 4   
-#define RATIO_MPS_TO_HZ 1.111112    //  meter per second
+#define RATIO_KMH_TO_HZ 4
+#define RATIO_MPS_TO_HZ 1.111112 //  meter per second
 #define TSAMPLE 10
 // Define the sample rate:  the ESP will wake every "TSAMPLE" second  to measure speed & direction, ex every 15sec
 // TSAMPLE must be a subdivision of 60sec, ex 10,12,15, but  not 8, 11, 13...
@@ -88,6 +88,7 @@ PubSubClient mqtt(broker, 1883, callback, client);
 #define WINDGUSTMAX_TTOPIC "tttweewx/windGustMax"
 #define WINDGUSTMAXDIR_TTOPIC "tttweewx/windGustMaxDir"
 
+#define ISOLAR_TTOPIC "tttweewx/Isolar"
 #define VDIR_TTOPIC "tttweewx/Vdir"
 #define VREF_TTOPIC "tttweewx/Vref"
 #define INDEX_TTOPIC "tttweewx/index"
@@ -377,9 +378,12 @@ void setup()
                         delay(10);
                         mqtt.publish(VSOLAR_TOPIC, String(solar_voltage).c_str());
                     }
-                    if ((solar_current >= 0) && (solar_current < 2000.0)) {
+                    if ((solar_current >= -0.10) && (solar_current < 2000.0)) {
                         setup_wifi();
                         setup_mqtt();
+                        if (solar_current<0){
+                            solar_current = 0;
+                        }
                         char solar_currant_str[5];
                         dtostrf(solar_current, 5, 3, solar_currant_str);
                         delay(10);
