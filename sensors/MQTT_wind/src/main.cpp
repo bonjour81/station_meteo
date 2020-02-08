@@ -1,5 +1,5 @@
 // MQTT wind sensor for weewx
-const float FW_VERSION = 1.39;
+const float FW_VERSION = 1.41;
 const char* fwImageURL = "http://192.168.1.181/fota/Wind/firmware.bin"; // update with your link to the new firmware bin file.
 const char* fwVersionURL = "http://192.168.1.181/fota/Wind/firmware.version";
 // update with your link to a text file with new version (just a single line with a number)
@@ -26,14 +26,14 @@ const char* fwVersionURL = "http://192.168.1.181/fota/Wind/firmware.version";
 #define led 13
 
 // general timings
-#define RATIO_KMH_TO_HZ 4
-#define RATIO_MPS_TO_HZ 1.111112
+#define RATIO_KMH_TO_HZ 4   
+#define RATIO_MPS_TO_HZ 1.111112    //  meter per second
 #define TSAMPLE 10
 // Define the sample rate:  the ESP will wake every "TSAMPLE" second  to measure speed & direction, ex every 15sec
 // TSAMPLE must be a subdivision of 60sec, ex 10,12,15, but  not 8, 11, 13...
-#define RATIO 6 // define how many TSAMPLE period are needed to perform average, example 8
+#define RATIO 30 // define how many TSAMPLE period are needed to perform average, example 8
 const uint16_t Taverage = TSAMPLE * RATIO; // Define the average rate:  the ESP will process average value "Taverage" second , example 8x15 = 120sec = 2min
-#define STILL_ALIVE 4 // will emit every STILL_ALIVE min even if no wind, must be a multiple of Taverage
+#define STILL_ALIVE 15 // will emit every STILL_ALIVE min even if no wind, must be a multiple of Taverage
 
 // macro for debug
 //#define DEBUGMODE //If you comment this line, the DPRINT & DPRINTLN lines are defined as blank.
@@ -400,7 +400,7 @@ void setup()
                         mqtt.publish(WINDSPEED_TOPIC, String(windSpeed).c_str());
                         delay(10);
                         mqtt.publish(WINDDIR_TOPIC, String(windDir).c_str());
-                        if ((windGustMax >= 0) && (windGustMax <= 10) && (windGustMaxDir >= 0) && (windGustMaxDir <= 360)) {
+                        if ((windGustMax >= windSpeed) && (windGustMax >= 0) && (windGustMax <= 10) && (windGustMaxDir >= 0) && (windGustMaxDir <= 360)) {
                             delay(10);
                             mqtt.publish(WINDGUST_TOPIC, String(windGustMax).c_str());
                             delay(10);
