@@ -1,5 +1,6 @@
 // MQTT wind sensor for weewx
-const float FW_VERSION = 1.44;
+const float FW_VERSION = 1.442;
+
 const char* fwImageURL = "http://192.168.1.181/fota/Wind/firmware.bin"; // update with your link to the new firmware bin file.
 const char* fwVersionURL = "http://192.168.1.181/fota/Wind/firmware.version";
 // update with your link to a text file with new version (just a single line with a number)
@@ -360,7 +361,7 @@ void setup()
                 }
                 //   if ((windGust > (windSpeed + 5)) && (windGust < 400) && (windGustDir >= 0) && (windGustDir <= 360) && (windSpeed > 1)) {
                 // little filter here too,emit gust only if high enought
-                if ((windGustMax > windSpeed) && (windGustMax < 400) && (windGustMaxDir >= 0) && (windGustMaxDir <= 360) && (windGustMax > 1)) {
+                if ((windSpeed > 1) && (windGustMax > windSpeed) && (windGustMax < 400) && (windGustMaxDir >= 0) && (windGustMaxDir <= 360) ) {
                     // little filter here too,emit gust only if high enought
                     DPRINTLN("Let's emit Gust *********************************************************");
                     setup_wifi();
@@ -432,6 +433,8 @@ void setup()
                         setup_mqtt();
                         delay(10);
                         mqtt.publish(STATUS_TOPIC, "Offline!");
+                        delay(10);
+                        mqtt.publish(STATUS_TOPIC, "Check_OTA!");
                         mqtt.disconnect();
                         check_OTA();
                     }
