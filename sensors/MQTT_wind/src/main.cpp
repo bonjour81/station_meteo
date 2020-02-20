@@ -1,5 +1,5 @@
 // MQTT wind sensor for weewx
-const float FW_VERSION = 1.42;
+const float FW_VERSION = 1.44;
 const char* fwImageURL = "http://192.168.1.181/fota/Wind/firmware.bin"; // update with your link to the new firmware bin file.
 const char* fwVersionURL = "http://192.168.1.181/fota/Wind/firmware.version";
 // update with your link to a text file with new version (just a single line with a number)
@@ -156,12 +156,27 @@ void report_wake_source();
 void check_OTA();
 void wifi_scan();
 
+//  watchdog timer in case of unexpected crash ?
+const int wdtTimeout = 30 * 1000; //time in ms to trigger the watchdog 30sec
+hw_timer_t* timer = NULL;
+void IRAM_ATTR resetModule()
+{
+    ets_printf("reboot\n");
+    esp_restart();
+}
+
 /******************************************************************************/
 /*                      BEGINNING OF PROGRAMM                                 */
 /******************************************************************************/
 
 void setup()
 {
+    timer = timerBegin(0, 80, true); //timer 0, div 80
+    timerAttachInterrupt(timer, &resetModule, true); //attach callback
+    timerAlarmWrite(timer, wdtTimeout * 1000, false); //set time in us
+    timerAlarmEnable(timer);
+    timerWrite(timer, 0);
+
 #ifdef DEBUGMODE
     Serial.begin(115200);
     DPRINT(millis());
@@ -381,7 +396,7 @@ void setup()
                     if ((solar_current >= -0.10) && (solar_current < 2000.0)) {
                         setup_wifi();
                         setup_mqtt();
-                        if (solar_current<0){
+                        if (solar_current < 0) {
                             solar_current = 0;
                         }
                         char solar_currant_str[5];
@@ -623,6 +638,7 @@ void setup_wifi()
     //config static IP
     WiFi.mode(WIFI_STA);
     WiFi.config(ip, gateway, subnet);
+#ifdef DEBUGMODE //Macros are usually in all capital letters.
     DPRINT("Wifi status: ");
     switch (WiFi.status()) {
     case WL_NO_SHIELD:
@@ -651,6 +667,7 @@ void setup_wifi()
         break;
     }
     DPRINT(" ");
+#endif
     if (WiFi.status() == WL_CONNECTED) {
         DPRINTLN("Wifi already connected");
         return;
@@ -664,6 +681,7 @@ void setup_wifi()
         DPRINTLN("Wifi ssid1 connected");
         return;
     } else {
+#ifdef DEBUGMODE //Macros are usually in all capital letters.
         DPRINTLN("Wifi ssid1 FAILED");
         switch (WiFi.status()) {
         case WL_NO_SHIELD:
@@ -691,6 +709,7 @@ void setup_wifi()
             DPRINTLN("6 :WL_DISCONNECTED");
             break;
         }
+#endif
         DPRINTLN("Let's try connecting 2nd wifi SSID");
     }
     // let's try SSID2 (if ssid1 did not worked)
@@ -699,6 +718,7 @@ void setup_wifi()
         DPRINTLN("Wifi ssid2 connected");
         return; // if connexion is successful, let's go to next, no need for SSID2
     } else {
+#ifdef DEBUGMODE //Macros are usually in all capital letters.
         DPRINTLN("Wifi ssid2 FAILED");
         switch (WiFi.status()) {
         case WL_NO_SHIELD:
@@ -726,11 +746,14 @@ void setup_wifi()
             DPRINTLN("6 :WL_DISCONNECTED");
             break;
         }
+#endif
         DPRINTLN("Failed to connect wifi, let's sleep and retry later...");
         WiFi.disconnect();
+#ifdef DEBUGMODE
         Serial.flush();
+#endif
         delay(50);
-        esp_sleep_enable_timer_wakeup(600000000); //600 seconds
+        esp_sleep_enable_timer_wakeup(300 * 1000000); //300 seconds
         esp_deep_sleep_start();
     }
 }
@@ -753,6 +776,7 @@ void setup_mqtt()
         mqtt.disconnect();
         delay(500);
         mqtt.connect(MQTT_CLIENT_NAME, BROKER_USERNAME, BROKER_KEY);
+#ifdef DEBUGMODE //Macros are usually in all capital letters.
         DPRINT("MQTT connexion state is: ");
         switch (mqtt.state()) {
         case MQTT_CONNECTION_TIMEOUT:
@@ -786,13 +810,16 @@ void setup_mqtt()
             DPRINTLN("5 : MQTT_CONNECT_UNAUTHORIZED - the client was not authorized to connect");
             break;
         }
+#endif
         retries--;
         if (retries < 1) {
             DPRINTLN("Failed to connect MQTT broker, will restart in 10min...");
             WiFi.disconnect();
+#ifdef DEBUGMODE
             Serial.flush();
+#endif
             delay(50);
-            esp_sleep_enable_timer_wakeup(600000000); //600 seconds
+            esp_sleep_enable_timer_wakeup(300 * 1000000); //300 seconds
             esp_deep_sleep_start();
         }
     }
