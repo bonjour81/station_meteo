@@ -1,5 +1,5 @@
 // MQTT wind sensor for weewx
-const float FW_VERSION = 1.45;
+const float FW_VERSION = 1.47;
 
 const char* fwImageURL = "http://192.168.1.181/fota/Wind/firmware.bin"; // update with your link to the new firmware bin file.
 const char* fwVersionURL = "http://192.168.1.181/fota/Wind/firmware.version";
@@ -48,8 +48,8 @@ const uint16_t Taverage = TSAMPLE * RATIO; // Define the average rate:  the ESP 
 
 // WiFi connexion informations //////////////////////////////////////////////////////////////
 
-IPAddress ip(192, 168, 1, 190); // hard coded IP address (make the wifi connexion faster (save battery), no need for DHCP)
-IPAddress gateway(192, 168, 1, 254); // set gateway to match your network
+IPAddress ip(192, 168, 5, 21); // hard coded IP address (make the wifi connexion faster (save battery), no need for DHCP)
+IPAddress gateway(192, 168, 5, 254); // set gateway to match your network
 IPAddress subnet(255, 255, 255, 0); // set subnet mask to match your network
 //IPAddress primaryDNS(212, 27, 40, 241); //optional free.fr 212.27.40.241
 //IPAddress secondaryDNS(91, 121, 161, 184); //optional ovh 91.121.161.184
