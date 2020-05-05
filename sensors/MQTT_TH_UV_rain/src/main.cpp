@@ -1,4 +1,4 @@
-const float FW_VERSION = 1.53;
+const float FW_VERSION = 1.55;
 //V1.52 : change parameters /timings in case of wifi connexion failure to save battery.
 //V1.50 : switched to SHT31 TH sensor, change INA219 address.
 //V1.49 bug correction
@@ -66,8 +66,8 @@ VEML6075 uv; // sparkfun lib sensor declaration     I2C address of 0x10 and cann
 Adafruit_SHT31 sht31 = Adafruit_SHT31();
 
 // WiFi connexion informations //////////////////////////////////////////////////////////////
-IPAddress ip(192, 168, 1, 191); // hard coded IP address (make the wifi connexion faster (save battery), no need for DHCP)
-IPAddress gateway(192, 168, 1, 254); // set gateway to match your network
+IPAddress ip(192, 168, 5, 20); // hard coded IP address (make the wifi connexion faster (save battery), no need for DHCP)
+IPAddress gateway(192, 168, 5, 254); // set gateway to match your network
 IPAddress subnet(255, 255, 255, 0); // set subnet mask to match your network
 
 // MQTT Configuration  //////////////////////////////////////////////////////////////////////
