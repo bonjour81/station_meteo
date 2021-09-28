@@ -26,13 +26,13 @@ May work on raspberry pi too (not tested).
 
 ---
 
-The following modification was reported by @gdlesage to work on **Raspberry pi**:
+The following modification was reported by @gdlesage to work on **Raspberry pi 2**:
 
 mqttuser = "user_name" #double quotes instead of single quotes
 
 mqttpass = "password" #double quotes instead of single quotes
 
-bus = smbus.SMBus(1) #1 instead of 0
+bus = smbus.SMBus(1) #1 instead of 0  (work on RPi2 but may vary on other Raspberry type)
 
 mqttc.username_pw_set(mqttuser,mqttpass) #no quotes around mqttuser or mqttpass
 
