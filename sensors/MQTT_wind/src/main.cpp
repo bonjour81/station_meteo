@@ -15,7 +15,7 @@ const char* fwVersionURL = "http://192.168.1.184/fota/Wind/firmware.version";
 #include <esp_task_wdt.h>
 #include <WiFiMulti.h>
 
-#include "PCF8583.h" //https://bitbucket.org/xoseperez/pcf8583.git
+#include "PCF8583.h" // https://github.com/xoseperez/pcf8583 
 #include <Adafruit_ADS1015.h> // library for ADS1115 too
 #include <Adafruit_INA219.h>
 #include <Arduino.h>
