@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 const float FW_VERSION = 1.62;
+=======
+const float FW_VERSION = 1.60;
+>>>>>>> 3b078b79022ce186abf7990e627d78c2b0ec1be6
 //V1.60 : replacement of wemos mini pro, new IP address
 //V1.59 : some IP address update
 //V1.58 : some IP address update
@@ -518,6 +522,15 @@ void setup()
         rtc.setMode(MODE_EVENT_COUNTER); // will set non zero value in register 0x00, so if no POR occured at next loop, register will not be cleared
         rtc.setCount(0); // reset rain counter
     }
+<<<<<<< HEAD
+=======
+
+
+    
+    ina219_solar.begin();
+    ina219_battery.begin();
+    measure_temp_humi(0);
+>>>>>>> 3b078b79022ce186abf7990e627d78c2b0ec1be6
 
     if (ina219_solar.begin()) {
         ina219_solar.powerSave(false);
@@ -644,6 +657,21 @@ void setup()
         delay(50);
     } else {
         mqtt.publish(STATUS_TOPIC, "Solar I out of range!");
+<<<<<<< HEAD
+=======
+        delay(50);
+    }
+    if ((battery_voltage >= 0) && (battery_voltage < 20.0)) {
+        setup_wifi();
+        setup_mqtt();
+        DPRINT("Vbat:");
+        DPRINT(battery_voltage);
+        DPRINTLN(" V");
+        mqtt.publish(VBAT_TOPIC, String(battery_voltage).c_str());
+>>>>>>> 3b078b79022ce186abf7990e627d78c2b0ec1be6
+        delay(50);
+    } else {
+        mqtt.publish(STATUS_TOPIC, "Bat V out of range");
         delay(50);
     }
     if (rain >= 0 && rain < 500) {
