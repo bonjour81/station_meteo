@@ -1,8 +1,5 @@
-<<<<<<< HEAD
 const float FW_VERSION = 1.62;
-=======
-const float FW_VERSION = 1.60;
->>>>>>> 3b078b79022ce186abf7990e627d78c2b0ec1be6
+
 //V1.60 : replacement of wemos mini pro, new IP address
 //V1.59 : some IP address update
 //V1.58 : some IP address update
