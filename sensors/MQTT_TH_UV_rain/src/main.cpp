@@ -1,4 +1,8 @@
-const float FW_VERSION = 1.55;
+const float FW_VERSION = 1.62;
+//V1.60 : replacement of wemos mini pro, new IP address
+//V1.59 : some IP address update
+//V1.58 : some IP address update
+//V1.57 : bug correction
 //V1.52 : change parameters /timings in case of wifi connexion failure to save battery.
 //V1.50 : switched to SHT31 TH sensor, change INA219 address.
 //V1.49 bug correction
@@ -27,8 +31,8 @@ const float FW_VERSION = 1.55;
 #define DPRINTLN(...) //now defines a blank line
 #endif
 
-const char* fwImageURL = "http://192.168.1.181/fota/THrain/firmware.bin"; // update with your link to the new firmware bin file.
-const char* fwVersionURL = "http://192.168.1.181/fota/THrain/firmware.version"; // update with your link to a text file with new version (just a single line with a number)
+const char* fwImageURL = "http://192.168.1.184/fota/THrain/firmware.bin"; // update with your link to the new firmware bin file.
+const char* fwVersionURL = "http://192.168.1.184/fota/THrain/firmware.version"; // update with your link to a text file with new version (just a single line with a number)
 // version is used to do OTA only one time, even if you let the firmware file available on the server.
 // flashing will occur only if a greater number is available in the "firmware.version" text file.
 // take care the number in text file is compared to "FW_VERSION" in the code => this const shall be incremented at each update.
@@ -40,7 +44,7 @@ const char* fwVersionURL = "http://192.168.1.181/fota/THrain/firmware.version"; 
 #include <ESP8266WiFiMulti.h> // may be used to optimise connexion to best AP.
 #include <ESP8266httpUpdate.h>
 #include <PCF8583.h>
-#include <SparkFun_VEML6075_Arduino_Library.h>
+//#include <SparkFun_VEML6075_Arduino_Library.h>
 #include <Wire.h>
 //#include <ClosedCube_HDC1080.h>
 //#include <Adafruit_AM2315.h> // => Modified library from https://github.com/switchdoclabs/SDL_ESP8266_AM2315   I have switched pin 4&5 in cpp file wire.begin
@@ -59,14 +63,14 @@ Adafruit_INA219 ina219_solar(0x41); // I2C address 0x41   !default is 0x40, conf
 Adafruit_INA219 ina219_battery(0x45); // I2C address 0x45   !default is 0x40, conflict with hdc1080
 // UV sensor
 //VEML6075 veml6075 = VEML6075();
-VEML6075 uv; // sparkfun lib sensor declaration     I2C address of 0x10 and cannot be changed!
+//VEML6075 uv; // sparkfun lib sensor declaration     I2C address of 0x10 and cannot be changed!
 //Temp and humidity sensor.
 //ClosedCube_HDC1080 hdc1080;  // default address is 0x40
 //Adafruit_AM2315 am2315; // default address is 0x05C (!cannot be changed)
 Adafruit_SHT31 sht31 = Adafruit_SHT31();
 
 // WiFi connexion informations //////////////////////////////////////////////////////////////
-IPAddress ip(192, 168, 5, 20); // hard coded IP address (make the wifi connexion faster (save battery), no need for DHCP)
+IPAddress ip(192, 168, 5, 22); // hard coded IP address (make the wifi connexion faster (save battery), no need for DHCP)
 IPAddress gateway(192, 168, 5, 254); // set gateway to match your network
 IPAddress subnet(255, 255, 255, 0); // set subnet mask to match your network
 
@@ -83,7 +87,7 @@ void callback(char* topic, byte* payload, unsigned int length)
     received_msg = true;
     received_length = length;
 }
-IPAddress broker(192, 168, 1, 181);
+IPAddress broker(192, 168, 5, 183);
 PubSubClient mqtt(broker, 1883, callback, client);
 #define STATUS_TOPIC "THrain/Status"
 #define VERSION_TOPIC "THrain/Version"
@@ -95,10 +99,11 @@ PubSubClient mqtt(broker, 1883, callback, client);
 #define HUMI_TOPIC "weewx/outHumidity"
 #define TEMP_TOPIC "weewx/outTemp"
 #define UV_TOPIC "weewx/UV"
-#define MQTT_CLIENT_NAME "ESP_THrain" // make sure it's a unique identifier on your MQTT broker
+#define MQTT_CLIENT_NAME "ESP_THrain2" // make sure it's a unique identifier on your MQTT broker
 
 // variables /////////////////////////////////////////////////////////////////////////////
 unsigned long top = 0;
+int   sleep_coef = 1;
 float rain = -1;
 float temp = -100;
 float temp_array[3] = { -100, -100, -100 };
@@ -112,6 +117,8 @@ float UVB = -1;
 float solar_voltage = -1;
 float solar_current = -1; // to check if battery is charging well.
 float battery_voltage = -1;
+float battery_voltage2 = -1;
+
 
 // set faster emission in debug mode (take care battery will empty faster!)
 #ifdef DEBUGMODE
@@ -214,7 +221,7 @@ void setup_wifi()
         DPRINTLN("Wifi ssid2 connected");
         return; // if connexion is successful, let's go to next, no need for SSID2
     } else {
-        DPRINT("2nd try Failed: ")
+        DPRINT("2nd try Failed: ");
         switch (WiFi.status()) {
         case WL_NO_SHIELD:
             DPRINTLN("255 :WL_NO_SHIELD");
@@ -244,7 +251,7 @@ void setup_wifi()
         DPRINTLN("let's sleep and retry later...");
         WiFi.disconnect();
         delay(50);
-        ESP.deepSleep(sleep_duration * 5 * 1000000); // if no connexion, deepsleep some time, after will restart & retry (= reset)
+        ESP.deepSleep(sleep_duration * 48 * 1000000); // if no connexion, deepsleep some time, after will restart & retry (= reset)
     }
 }
 
@@ -303,7 +310,7 @@ void setup_mqtt()
         if (retries < 1) {
             WiFi.disconnect();
             delay(50);
-            ESP.deepSleep(sleep_duration * 5 * 1000000); // if no connexion, deepsleep for 20sec, after will restart (= reset)
+            ESP.deepSleep(sleep_duration * 48 * 1000000); // if no connexion, deepsleep for 20sec, after will restart (= reset)
         }
     }
     mqtt.publish(STATUS_TOPIC, "Online!");
@@ -339,7 +346,7 @@ void check_OTA()
                 DPRINTLN("start OTA !");
                 http.end();
                 delay(100);
-                t_httpUpdate_return ret = ESPhttpUpdate.update(client, "http://192.168.1.181/fota/THrain/firmware.bin");
+                t_httpUpdate_return ret = ESPhttpUpdate.update(client, "http://192.168.1.184/fota/THrain/firmware.bin");
                 switch (ret) {
                 case HTTP_UPDATE_FAILED:
                     DPRINT("HTTP_UPDATE_FAILD Error");
@@ -368,8 +375,13 @@ void measure_temp_humi(byte index)
     DPRINT("Temperature & Humidity measurement index: ");
     DPRINTLN(index);
     if (sht31.begin(0x44)) {
+        DPRINT("SHT31 detected: ");
         temp_buffer = sht31.readTemperature();
+        DPRINT(temp_buffer);
+        DPRINT("°C ");
         humi_buffer = sht31.readHumidity();
+        DPRINT(humi_buffer);
+        DPRINTLN("%");
         if (!isnan(temp_buffer)) { // check if 'is not a number'
             temp_array[index] = temp_buffer;
         } else {
@@ -495,6 +507,9 @@ void setup()
     WiFi.mode(WIFI_STA);
     WiFi.config(ip, gateway, subnet);
     WiFi.disconnect();
+
+    measure_temp_humi(0);
+
     // check if POR occured ( @POR, register 0x00 of PCF8583 is set to 0 )
     if (rtc.getRegister(0) == 0) { // POR occured, let's clear the SRAM of PCF8583
         for (uint8_t i = 0x10; i < 0x20; i++) { // PCF8583 SRAM start @0x10 to 0xFF, let's clear a few bytes only.
@@ -503,27 +518,36 @@ void setup()
         rtc.setMode(MODE_EVENT_COUNTER); // will set non zero value in register 0x00, so if no POR occured at next loop, register will not be cleared
         rtc.setCount(0); // reset rain counter
     }
-    ina219_solar.begin();
-    ina219_battery.begin();
-    measure_temp_humi(0);
 
+    if (ina219_solar.begin()) {
+        ina219_solar.powerSave(false);
+        delay(5);
+        solar_voltage = ina219_solar.getBusVoltage_V();
+        DPRINT("solar_voltage:");
+        DPRINTLN(solar_voltage);
+        solar_current = (ina219_solar.getCurrent_mA());
+        DPRINT("solar_current:");
+        DPRINTLN(solar_current);
+        solar_current = 0.001 * solar_current; // convert mA to Amps
+        ina219_solar.powerSave(true);
+    }
+    if (ina219_battery.begin()){
+        ina219_battery.powerSave(false);
+        delay(5);
+        battery_voltage = ina219_battery.getBusVoltage_V();
+        DPRINT("battery_voltage:");
+        DPRINTLN(battery_voltage);
+        ina219_battery.powerSave(true);
+    }
+
+    
     rain = 0.2 * float(rtc.getCount());
     DPRINT("rain :");
     DPRINTLN(rain);
-    solar_voltage = ina219_solar.getBusVoltage_V();
-    DPRINT("solar_voltage:");
-    DPRINTLN(solar_voltage);
-    solar_current = (ina219_solar.getCurrent_mA());
-    DPRINT("solar_current:");
-    DPRINTLN(solar_current);
-    solar_current = 0.001 * solar_current; // convert mA to Amps
-    battery_voltage = ina219_battery.getBusVoltage_V();
-    DPRINT("battery_voltage:");
-    DPRINTLN(battery_voltage);
 
-    if (uv.begin()) { // power ON veml6075 early to let it wakeup & warmup
+   /* if (uv.begin()) { // power ON veml6075 early to let it wakeup & warmup
         uv.powerOn();
-    }
+    }*/
     DPRINT("Entering setup_wifi()....");
     setup_wifi();
     // 2nd temp & humi sample: AM2315 needs to way 2 sec between samples
@@ -562,6 +586,13 @@ void setup()
     DPRINTLN(received_length);
 
     //setup_mqtt();
+    if (ina219_battery.begin()){
+        ina219_battery.powerSave(false);
+        delay(5);
+        battery_voltage2 = ina219_battery.getBusVoltage_V();
+        ina219_battery.powerSave(true);
+    }
+
 
     if (millis() > (top + 2000)) {
         measure_temp_humi(2);
@@ -577,6 +608,18 @@ void setup()
     mqtt.publish(STATUS_TOPIC, "Publishing!");
     //Status_pub.publish("Publishing!");
     delay(50);
+    if ((battery_voltage >= 0) && (battery_voltage < 20.0)) {
+        setup_wifi();
+        setup_mqtt();
+        DPRINT("Vbat:");
+        DPRINT(battery_voltage);
+        DPRINTLN(" V");
+        mqtt.publish(VBAT_TOPIC, String(battery_voltage).c_str());
+        delay(50);
+    } else {
+        mqtt.publish(STATUS_TOPIC, "Bat V out of range");
+        delay(50);
+    }
     if ((solar_voltage >= 0) && (solar_voltage < 20.0)) {
         setup_wifi();
         setup_mqtt();
@@ -584,6 +627,9 @@ void setup()
         DPRINT(solar_voltage);
         DPRINTLN(" V");
         mqtt.publish(VSOLAR_TOPIC, String(solar_voltage).c_str());
+        delay(50);
+    } else {
+        mqtt.publish(STATUS_TOPIC, "Solar V out of range!");
         delay(50);
     }
     if ((solar_current >= 0) && (solar_current < 1)) {
@@ -596,14 +642,8 @@ void setup()
         dtostrf(solar_current, 5, 3, solar_currant_str);
         mqtt.publish(ISOLAR_TOPIC, solar_currant_str);
         delay(50);
-    }
-    if ((battery_voltage >= 0) && (battery_voltage < 20.0)) {
-        setup_wifi();
-        setup_mqtt();
-        DPRINT("Vbat:");
-        DPRINT(battery_voltage);
-        DPRINTLN(" V");
-        mqtt.publish(VBAT_TOPIC, String(battery_voltage).c_str());
+    } else {
+        mqtt.publish(STATUS_TOPIC, "Solar I out of range!");
         delay(50);
     }
     if (rain >= 0 && rain < 500) {
@@ -616,6 +656,9 @@ void setup()
             rtc.setCount(0); //  reset rain counter only if it was able to send the date to the mqtt broker
         };
         delay(50);
+    } else {
+        mqtt.publish(STATUS_TOPIC, "Rain out of range");
+        delay(50);
     }
     if (humi >= 0 && humi <= 100) {
         setup_wifi();
@@ -624,6 +667,9 @@ void setup()
         DPRINT(humi);
         DPRINTLN(" %");
         mqtt.publish(HUMI_TOPIC, String(humi).c_str());
+        delay(50);
+    } else {
+        mqtt.publish(STATUS_TOPIC, "Humi out of range");
         delay(50);
     }
     if ((temp > -40) && (temp < 80)) {
@@ -634,9 +680,12 @@ void setup()
         DPRINTLN(" deg");
         mqtt.publish(TEMP_TOPIC, String(temp).c_str());
         delay(50);
+    } else {
+        mqtt.publish(STATUS_TOPIC, "OutTemp out of range");
+        delay(50);
     }
     // measure UV index and publish
-    if (uv.begin()) {
+/*if (uv.begin()) {
         UVindex = uv.index();
         delay(2);
         UVindex = UVindex + uv.index();
@@ -650,19 +699,32 @@ void setup()
         DPRINT("UV:");
         DPRINTLN(UVindex);
         mqtt.publish(UV_TOPIC, String(UVindex).c_str());
-    }
+    }*/
     // job is done, let's disconnect
     DPRINTLN("End of measurements & MQTT publish");
     //Status_pub.publish("Offline!");
     mqtt.publish(STATUS_TOPIC, "Offline!");
-    delay(15);
+    delay(25);
     mqtt.disconnect();
-    delay(15);
+    delay(25);
     WiFi.disconnect();
     //Serial.println("Sleep");
     DPRINTLN("Go to sleep");
     delay(15);
-    ESP.deepSleep((sleep_duration * 1000000) - (1000 * millis()));
+    sleep_coef = 1;
+    if ((battery_voltage < 3.6) && (battery_voltage2 < 3.6)) {
+        sleep_coef = 3; 
+    } 
+    if ((battery_voltage < 3.4) && (battery_voltage2 < 3.4)) {
+        sleep_coef = 12; //30min 
+    } 
+    if ((battery_voltage < 3.2) && (battery_voltage2 < 3.2)) {
+        sleep_coef = 48; // 2h
+    } 
+     if ((battery_voltage < 0) && (battery_voltage2 < 0)) {
+        sleep_coef = 12; //30min 
+    } 
+    ESP.deepSleep((sleep_duration * sleep_coef * 1000000) - (1000 * millis()));
 }
 
 void loop()
