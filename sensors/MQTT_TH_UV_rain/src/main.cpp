@@ -1,5 +1,8 @@
-const float FW_VERSION = 1.62;
-
+const float FW_VERSION = 1.66;
+//V1.66 : retry pubsubclient 2.8
+//V1.65 : back to pubsub 2.7
+//V1.64 : try pub sub client v2.8 instead of 2.7 => not compiling
+//V1.63 : minor corrections
 //V1.60 : replacement of wemos mini pro, new IP address
 //V1.59 : some IP address update
 //V1.58 : some IP address update
@@ -510,6 +513,7 @@ void setup()
     WiFi.disconnect();
 
     measure_temp_humi(0);
+    top = millis();
 
     // check if POR occured ( @POR, register 0x00 of PCF8583 is set to 0 )
     if (rtc.getRegister(0) == 0) { // POR occured, let's clear the SRAM of PCF8583
@@ -519,15 +523,6 @@ void setup()
         rtc.setMode(MODE_EVENT_COUNTER); // will set non zero value in register 0x00, so if no POR occured at next loop, register will not be cleared
         rtc.setCount(0); // reset rain counter
     }
-<<<<<<< HEAD
-=======
-
-
-    
-    ina219_solar.begin();
-    ina219_battery.begin();
-    measure_temp_humi(0);
->>>>>>> 3b078b79022ce186abf7990e627d78c2b0ec1be6
 
     if (ina219_solar.begin()) {
         ina219_solar.powerSave(false);
@@ -560,24 +555,26 @@ void setup()
     }*/
     DPRINT("Entering setup_wifi()....");
     setup_wifi();
+    DPRINTLN("End of setup_wifi()");
+
     // 2nd temp & humi sample: AM2315 needs to way 2 sec between samples
     if (millis() > (top + 2000)) {
         measure_temp_humi(1);
     } else {
-        while (millis() < (top + 2000)) {
-            delay(10);
-        }
+        delay(top + 2000 - millis());
         measure_temp_humi(1);
     }
     top = millis();
 
-    DPRINTLN("End of setup_wifi()");
+    
     check_OTA(); // check for new firmware available on server, if check OTA with occur
     //OTA must be checked before connecting to MQTT (or after disconnecting MQTT)
     //measurements done, time to send them all !
     setup_mqtt();
     delay(15);
-    uint8_t loops = 10;
+   
+   // to receive mqtt message (retained) not used.
+   /* uint8_t loops = 10;
     DPRINT("Check for mqtt reception:");
     while ((received_msg == false) && (loops > 0)) {
         delay(30);
@@ -594,6 +591,7 @@ void setup()
     DPRINTLN("");
     DPRINT("length:");
     DPRINTLN(received_length);
+    */
 
     //setup_mqtt();
     if (ina219_battery.begin()){
@@ -607,9 +605,7 @@ void setup()
     if (millis() > (top + 2000)) {
         measure_temp_humi(2);
     } else {
-        while (millis() < (top + 2000)) {
-            delay(10);
-        }
+        delay(top + 2000 - millis());
         measure_temp_humi(2);
     }
 
@@ -654,23 +650,8 @@ void setup()
         delay(50);
     } else {
         mqtt.publish(STATUS_TOPIC, "Solar I out of range!");
-<<<<<<< HEAD
-=======
         delay(50);
-    }
-    if ((battery_voltage >= 0) && (battery_voltage < 20.0)) {
-        setup_wifi();
-        setup_mqtt();
-        DPRINT("Vbat:");
-        DPRINT(battery_voltage);
-        DPRINTLN(" V");
-        mqtt.publish(VBAT_TOPIC, String(battery_voltage).c_str());
->>>>>>> 3b078b79022ce186abf7990e627d78c2b0ec1be6
-        delay(50);
-    } else {
-        mqtt.publish(STATUS_TOPIC, "Bat V out of range");
-        delay(50);
-    }
+    } 
     if (rain >= 0 && rain < 500) {
         setup_wifi();
         setup_mqtt();
@@ -746,7 +727,7 @@ void setup()
     if ((battery_voltage < 3.2) && (battery_voltage2 < 3.2)) {
         sleep_coef = 48; // 2h
     } 
-     if ((battery_voltage < 0) && (battery_voltage2 < 0)) {
+     if ((battery_voltage < 0) && (battery_voltage2 < 0)) {  // mesurement error, issue suspected ?
         sleep_coef = 12; //30min 
     } 
     ESP.deepSleep((sleep_duration * sleep_coef * 1000000) - (1000 * millis()));
