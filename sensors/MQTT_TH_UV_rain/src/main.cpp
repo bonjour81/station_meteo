@@ -1,4 +1,6 @@
-const float FW_VERSION = 1.66;
+const float FW_VERSION = 1.67;
+//V1.67 : add TPL5010 watchdog : pin "DONE" of TPL5010 connected to D6 / GPIO12 of the Wemos
+//        the TPL5010 is set with 100k resistor = ~30min timeout
 //V1.66 : retry pubsubclient 2.8
 //V1.65 : back to pubsub 2.7
 //V1.64 : try pub sub client v2.8 instead of 2.7 => not compiling
@@ -716,19 +718,22 @@ void setup()
     WiFi.disconnect();
     //Serial.println("Sleep");
     DPRINTLN("Go to sleep");
-    delay(15);
+    // feed the TPL5010 watchdog: pulse 1ms on D6
+    pinMode(D6, OUTPUT); 
+    digitalWrite(D6, HIGH);
+    delay(1);
+    digitalWrite(D6, LOW);
+    // go to sleep
+    delay(14);
     sleep_coef = 1;
     if ((battery_voltage < 3.6) && (battery_voltage2 < 3.6)) {
         sleep_coef = 3; 
     } 
     if ((battery_voltage < 3.4) && (battery_voltage2 < 3.4)) {
-        sleep_coef = 12; //30min 
-    } 
-    if ((battery_voltage < 3.2) && (battery_voltage2 < 3.2)) {
-        sleep_coef = 48; // 2h
+        sleep_coef = 10; //25min 
     } 
      if ((battery_voltage < 0) && (battery_voltage2 < 0)) {  // mesurement error, issue suspected ?
-        sleep_coef = 12; //30min 
+        sleep_coef = 10; //25min 
     } 
     ESP.deepSleep((sleep_duration * sleep_coef * 1000000) - (1000 * millis()));
 }
