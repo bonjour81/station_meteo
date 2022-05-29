@@ -1,4 +1,5 @@
-const float FW_VERSION = 1.68;
+const float FW_VERSION = 1.69;
+//v1.69 : publish temp before humi
 //v1.68 minor  tunning for debug
 //V1.67 : add TPL5010 watchdog : pin "DONE" of TPL5010 connected to D6 / GPIO12 of the Wemos
 //        the TPL5010 is set with 100k resistor = ~30min timeout
@@ -662,20 +663,6 @@ void setup()
         mqtt.publish(STATUS_TOPIC, "Rain out of range");
         delay(100);
     }
-    if (humi >= 0 && humi <= 100) {
-        setup_wifi();
-        setup_mqtt();
-        DPRINT("publishing humi:");
-        DPRINT(humi);
-        DPRINTLN(" %");
-        if (mqtt.publish(HUMI_TOPIC, String(humi).c_str())) {
-            DPRINTLN("successfull publish of HUMI");
-        }
-        delay(100);
-    } else {
-        mqtt.publish(STATUS_TOPIC, "Humi out of range");
-        delay(100);
-    }
     if ((temp > -40) && (temp < 80)) {
         setup_wifi();
         setup_mqtt();
@@ -688,6 +675,21 @@ void setup()
         delay(100);
     } else {
         mqtt.publish(STATUS_TOPIC, "OutTemp out of range");
+        delay(100);
+    }
+
+    if (humi >= 0 && humi <= 100) {
+        setup_wifi();
+        setup_mqtt();
+        DPRINT("publishing humi:");
+        DPRINT(humi);
+        DPRINTLN(" %");
+        if (mqtt.publish(HUMI_TOPIC, String(humi).c_str())) {
+            DPRINTLN("successfull publish of HUMI");
+        }
+        delay(100);
+    } else {
+        mqtt.publish(STATUS_TOPIC, "Humi out of range");
         delay(100);
     }
 
