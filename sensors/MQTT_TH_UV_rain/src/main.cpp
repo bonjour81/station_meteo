@@ -1,4 +1,5 @@
-const float FW_VERSION = 1.67;
+const float FW_VERSION = 1.68;
+//v1.68 minor  tunning for debug
 //V1.67 : add TPL5010 watchdog : pin "DONE" of TPL5010 connected to D6 / GPIO12 of the Wemos
 //        the TPL5010 is set with 100k resistor = ~30min timeout
 //V1.66 : retry pubsubclient 2.8
@@ -139,12 +140,34 @@ int sleep_duration = 150; // deep sleep duration in seconds
 void wifi_connect(const char* ssid, const char* password, uint8_t timeout)
 {
     uint8_t timeout_wifi = timeout;
+    digitalWrite(LED_BUILTIN, LOW);
+    #ifdef DEBUGMODE
+    Serial.println("");
+    Serial.print("Scan start ... ");
+    int nnn = WiFi.scanNetworks();
+    Serial.print(nnn);
+    Serial.println(" network(s) found");
+    for (int iii = 0; iii < nnn; iii++)
+    {
+        Serial.print(WiFi.SSID(iii));
+        Serial.print(" (");
+        Serial.print(WiFi.RSSI(iii));//Signal strength in dBm  )
+        Serial.println("dBm)");
+    }
+    Serial.println();
+    Serial.print("connecting to: ");
+    Serial.print(ssid);
+
+    #endif
     WiFi.begin(ssid, password);
     while ((WiFi.status() != WL_CONNECTED) && (timeout_wifi > 0)) {
-        delay(1000);
+        delay(200);
+        digitalWrite(LED_BUILTIN, HIGH);  // led will get one 100ms after 1st try to connect so we can distinguish the very short flash (~10ms) done before
+        delay(800);
         DPRINT(".");
         timeout_wifi--;
     }
+    digitalWrite(LED_BUILTIN, LOW);
 }
 //Connexion au réseau WiFi
 void setup_wifi()
@@ -277,7 +300,12 @@ void setup_mqtt()
     DPRINT("Connecting...");
     while (!client.connected()) {
         mqtt.disconnect();
-        delay(500);
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(200);
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(100);
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(200);
         mqtt.connect(MQTT_CLIENT_NAME, BROKER_USERNAME, BROKER_KEY);
         DPRINT("MQTT connexion state is: ");
         switch (mqtt.state()) {
@@ -507,6 +535,9 @@ void setup()
 #ifdef DEBUGMODE
     Serial.begin(115200);
 #endif
+    ESP.eraseConfig();  // added 29/05/2022 following wifi connexion issues
+    pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, HIGH);
     DPRINTLN("");
     DPRINT("MAC address:");
     DPRINTLN(WiFi.macAddress());
@@ -546,12 +577,12 @@ void setup()
         DPRINTLN(battery_voltage);
         ina219_battery.powerSave(true);
     }
-
     
     rain = 0.2 * float(rtc.getCount());
     DPRINT("rain :");
     DPRINTLN(rain);
-
+    digitalWrite(LED_BUILTIN, LOW);
+ 
    /* if (uv.begin()) { // power ON veml6075 early to let it wakeup & warmup
         uv.powerOn();
     }*/
@@ -615,7 +646,51 @@ void setup()
 
     mqtt.publish(STATUS_TOPIC, "Publishing!");
     //Status_pub.publish("Publishing!");
-    delay(50);
+    delay(100);
+    if (rain >= 0 && rain < 500) {
+        setup_wifi();
+        setup_mqtt();
+        DPRINT("publishing rain:");
+        DPRINT(rain);
+        DPRINTLN(" mm");
+        if (mqtt.publish(RAIN_TOPIC, String(rain).c_str())) {
+            rtc.setCount(0); //  reset rain counter only if it was able to send the date to the mqtt broker
+            DPRINTLN("successfull publish of rain, reset counter");
+        };
+        delay(100);
+    } else {
+        mqtt.publish(STATUS_TOPIC, "Rain out of range");
+        delay(100);
+    }
+    if (humi >= 0 && humi <= 100) {
+        setup_wifi();
+        setup_mqtt();
+        DPRINT("publishing humi:");
+        DPRINT(humi);
+        DPRINTLN(" %");
+        if (mqtt.publish(HUMI_TOPIC, String(humi).c_str())) {
+            DPRINTLN("successfull publish of HUMI");
+        }
+        delay(100);
+    } else {
+        mqtt.publish(STATUS_TOPIC, "Humi out of range");
+        delay(100);
+    }
+    if ((temp > -40) && (temp < 80)) {
+        setup_wifi();
+        setup_mqtt();
+        DPRINT("publishing temp:");
+        DPRINT(temp);
+        DPRINTLN(" deg");
+        if (mqtt.publish(TEMP_TOPIC, String(temp).c_str())){
+            DPRINTLN("successfull publish of TEMP");
+        }
+        delay(100);
+    } else {
+        mqtt.publish(STATUS_TOPIC, "OutTemp out of range");
+        delay(100);
+    }
+
     if ((battery_voltage >= 0) && (battery_voltage < 20.0)) {
         setup_wifi();
         setup_mqtt();
@@ -623,10 +698,10 @@ void setup()
         DPRINT(battery_voltage);
         DPRINTLN(" V");
         mqtt.publish(VBAT_TOPIC, String(battery_voltage).c_str());
-        delay(50);
+        delay(100);
     } else {
         mqtt.publish(STATUS_TOPIC, "Bat V out of range");
-        delay(50);
+        delay(100);
     }
     if ((solar_voltage >= 0) && (solar_voltage < 20.0)) {
         setup_wifi();
@@ -635,10 +710,10 @@ void setup()
         DPRINT(solar_voltage);
         DPRINTLN(" V");
         mqtt.publish(VSOLAR_TOPIC, String(solar_voltage).c_str());
-        delay(50);
+        delay(100);
     } else {
         mqtt.publish(STATUS_TOPIC, "Solar V out of range!");
-        delay(50);
+        delay(100);
     }
     if ((solar_current >= 0) && (solar_current < 1)) {
         setup_wifi();
@@ -649,49 +724,12 @@ void setup()
         char solar_currant_str[5];
         dtostrf(solar_current, 5, 3, solar_currant_str);
         mqtt.publish(ISOLAR_TOPIC, solar_currant_str);
-        delay(50);
+        delay(100);
     } else {
         mqtt.publish(STATUS_TOPIC, "Solar I out of range!");
-        delay(50);
+        delay(100);
     } 
-    if (rain >= 0 && rain < 500) {
-        setup_wifi();
-        setup_mqtt();
-        DPRINT("publishing rain:");
-        DPRINT(rain);
-        DPRINTLN(" mm");
-        if (mqtt.publish(RAIN_TOPIC, String(rain).c_str())) {
-            rtc.setCount(0); //  reset rain counter only if it was able to send the date to the mqtt broker
-        };
-        delay(50);
-    } else {
-        mqtt.publish(STATUS_TOPIC, "Rain out of range");
-        delay(50);
-    }
-    if (humi >= 0 && humi <= 100) {
-        setup_wifi();
-        setup_mqtt();
-        DPRINT("humi:");
-        DPRINT(humi);
-        DPRINTLN(" %");
-        mqtt.publish(HUMI_TOPIC, String(humi).c_str());
-        delay(50);
-    } else {
-        mqtt.publish(STATUS_TOPIC, "Humi out of range");
-        delay(50);
-    }
-    if ((temp > -40) && (temp < 80)) {
-        setup_wifi();
-        setup_mqtt();
-        DPRINT("temp:");
-        DPRINT(temp);
-        DPRINTLN(" deg");
-        mqtt.publish(TEMP_TOPIC, String(temp).c_str());
-        delay(50);
-    } else {
-        mqtt.publish(STATUS_TOPIC, "OutTemp out of range");
-        delay(50);
-    }
+
     // measure UV index and publish
 /*if (uv.begin()) {
         UVindex = uv.index();
@@ -712,7 +750,7 @@ void setup()
     DPRINTLN("End of measurements & MQTT publish");
     //Status_pub.publish("Offline!");
     mqtt.publish(STATUS_TOPIC, "Offline!");
-    delay(25);
+    delay(100);
     mqtt.disconnect();
     delay(25);
     WiFi.disconnect();
