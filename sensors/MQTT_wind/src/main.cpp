@@ -1,6 +1,7 @@
 // MQTT wind sensor for weewx
-const float FW_VERSION = 1.49;
+const float FW_VERSION = 1.51;
 // history:
+// 1.50/51 : update credentials
 // 1.49 : update IP addresses
 // 1.48 : improve watchdog.
 
