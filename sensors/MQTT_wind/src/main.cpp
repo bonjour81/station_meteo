@@ -1,16 +1,22 @@
 // MQTT wind sensor for weewx
-const float FW_VERSION = 1.47;
+const float FW_VERSION = 1.51;
+// history:
+// 1.50/51 : update credentials
+// 1.49 : update IP addresses
+// 1.48 : improve watchdog.
 
-const char* fwImageURL = "http://192.168.1.181/fota/Wind/firmware.bin"; // update with your link to the new firmware bin file.
-const char* fwVersionURL = "http://192.168.1.181/fota/Wind/firmware.version";
+
+const char* fwImageURL = "http://192.168.1.184/fota/Wind/firmware.bin"; // update with your link to the new firmware bin file.
+const char* fwVersionURL = "http://192.168.1.184/fota/Wind/firmware.version";
 // update with your link to a text file with new version (just a single line with a number)
 // version is used to do OTA only one time, even if you let the firmware file available on the server.
 // flashing will occur only if a greater number is available in the "firmware.version" text file.
 // take care the number in text file is compared to "FW_VERSION" in the code => this const shall be incremented at each update.
 
+#include <esp_task_wdt.h>
 #include <WiFiMulti.h>
 
-#include "PCF8583.h" //https://bitbucket.org/xoseperez/pcf8583.git
+#include "PCF8583.h" // https://github.com/xoseperez/pcf8583 
 #include <Adafruit_ADS1015.h> // library for ADS1115 too
 #include <Adafruit_INA219.h>
 #include <Arduino.h>
@@ -67,7 +73,7 @@ void callback(char* topic, byte* payload, unsigned int length)
     received_msg = true;
     received_length = length;
 }
-IPAddress broker(192, 168, 1, 181);
+IPAddress broker(192, 168, 5, 183);
 PubSubClient mqtt(broker, 1883, callback, client);
 #define STATUS_TOPIC "wind/Status"
 #define VERSION_TOPIC "wind/Version"
@@ -158,13 +164,7 @@ void check_OTA();
 void wifi_scan();
 
 //  watchdog timer in case of unexpected crash ?
-const int wdtTimeout = 30 * 1000; //time in ms to trigger the watchdog 30sec
-hw_timer_t* timer = NULL;
-void IRAM_ATTR resetModule()
-{
-    ets_printf("reboot\n");
-    esp_restart();
-}
+#define WDT_TIMEOUT 30
 
 /******************************************************************************/
 /*                      BEGINNING OF PROGRAMM                                 */
@@ -172,12 +172,7 @@ void IRAM_ATTR resetModule()
 
 void setup()
 {
-    timer = timerBegin(0, 80, true); //timer 0, div 80
-    timerAttachInterrupt(timer, &resetModule, true); //attach callback
-    timerAlarmWrite(timer, wdtTimeout * 1000, false); //set time in us
-    timerAlarmEnable(timer);
-    timerWrite(timer, 0);
-
+  
 #ifdef DEBUGMODE
     Serial.begin(115200);
     DPRINT(millis());
@@ -185,7 +180,17 @@ void setup()
     DPRINTLN(" HELLO WORLD!");
     //DPRINT("MAC Address: ");
     //DPRINTLN(WiFi.macAddress());
+    //DPRINTLN("Init watchdog");
 #endif
+
+  esp_task_wdt_init(WDT_TIMEOUT, true); //enable panic so ESP32 restarts
+  esp_task_wdt_add(NULL); //add current thread to WDT watch
+  esp_task_wdt_delete(NULL);
+
+#ifdef DEBUGMODE
+    //DPRINTLN("Watchdog init done!");
+#endif
+
     WiFi.mode(WIFI_STA);
     if (!WiFi.config(ip, gateway, subnet)) {
         DPRINTLN("STA Failed to configure");
@@ -602,6 +607,9 @@ void setup()
 #ifdef DEBUGMODE
     Serial.flush();
 #endif
+
+    esp_task_wdt_delete(NULL);  // detach watchdog
+    esp_task_wdt_deinit(); // disable watchdog
     esp_deep_sleep_start(); // go to deep sleep !
 }
 
@@ -752,6 +760,8 @@ void setup_wifi()
 #endif
         delay(50);
         esp_sleep_enable_timer_wakeup(300 * 1000000); //300 seconds
+        esp_task_wdt_delete(NULL);  // detach watchdog
+        esp_task_wdt_deinit(); // disable watchdog
         esp_deep_sleep_start();
     }
 }
@@ -818,6 +828,8 @@ void setup_mqtt()
 #endif
             delay(50);
             esp_sleep_enable_timer_wakeup(300 * 1000000); //300 seconds
+            esp_task_wdt_delete(NULL);  // detach watchdog
+            esp_task_wdt_deinit(); // disable watchdog
             esp_deep_sleep_start();
         }
     }
@@ -876,7 +888,7 @@ void check_OTA()
                 DPRINTLN("start OTA !");
                 http.end();
                 delay(100);
-                t_httpUpdate_return ret = httpUpdate.update(client, "http://192.168.1.181/fota/Wind/firmware.bin");
+                t_httpUpdate_return ret = httpUpdate.update(client, "http://192.168.1.184/fota/Wind/firmware.bin");
                 switch (ret) {
                 case HTTP_UPDATE_FAILED:
                     DPRINT("HTTP_UPDATE_FAILD Error");
