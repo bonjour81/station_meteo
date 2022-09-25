@@ -1,4 +1,5 @@
-const float FW_VERSION = 1.69;
+const float FW_VERSION = 1.71;
+//v1.70,71 : update crédentials 
 //v1.69 : publish temp before humi
 //v1.68 minor  tunning for debug
 //V1.67 : add TPL5010 watchdog : pin "DONE" of TPL5010 connected to D6 / GPIO12 of the Wemos
